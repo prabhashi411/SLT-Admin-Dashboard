@@ -3,7 +3,11 @@ import StatsCards from '../components/Dashboard/StatsCards';
 import AgentsTable from '../components/Dashboard/AgentsTable';
 import { statsData, agentsData } from '../data/mockData';
 
-export default function Dashboard() {
+interface DashboardProps {
+  onRegisterAgent: () => void;
+}
+
+export default function Dashboard({ onRegisterAgent }: DashboardProps) {
   return (
     <>
       {/* Page Tag */}
@@ -19,7 +23,7 @@ export default function Dashboard() {
           <h1>Registered Chat Agents</h1>
           <p>Manage voice pipelines and telephony hooks for enterprise chat agents</p>
         </div>
-        <button className="btn-primary">
+        <button className="btn-primary" onClick={onRegisterAgent}>
           <Plus size={16} />
           Register Agent
         </button>
