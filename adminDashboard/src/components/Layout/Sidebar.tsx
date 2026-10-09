@@ -5,8 +5,8 @@ import {
   GitBranch,
   Activity,
   Settings,
-  Layers,
 } from 'lucide-react';
+import sltLogo from '../../assets/slt-logo.svg';
 
 interface NavItem {
   id: string;
@@ -39,13 +39,7 @@ export default function Sidebar({ activeNav, onNavChange }: SidebarProps) {
     <aside className="sidebar">
       {/* Brand */}
       <div className="sidebar-brand">
-        <div className="sidebar-brand-icon">
-          <Layers size={20} />
-        </div>
-        <div className="sidebar-brand-text">
-          <h1>SLT Voice Layer Portal</h1>
-          <p>Mission-Critical Telephony Fabric</p>
-        </div>
+        <img src={sltLogo} alt="SLT Mobitel" className="sidebar-logo" />
       </div>
 
       {/* Version Badge */}
