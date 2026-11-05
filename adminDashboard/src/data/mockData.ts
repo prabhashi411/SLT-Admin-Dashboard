@@ -9,6 +9,8 @@ export interface Agent {
   };
   status: 'active' | 'standby';
   channels?: number;
+  // 'live' rows come from the backend; everything else is sample data.
+  source?: 'live' | 'sample';
 }
 
 export interface StatCard {

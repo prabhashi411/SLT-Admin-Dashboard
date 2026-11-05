@@ -1,0 +1,451 @@
+/* ========================================
+   Business Command Center layer
+   Loaded after index.css. Holds every style the live-connected
+   dashboard needs, so components carry no inline styles.
+   ======================================== */
+
+/* ---------- Top bar (compact, single row) ---------- */
+
+.cc-topbar {
+  gap: 12px;
+  min-width: 0;
+}
+
+.cc-topbar .topbar-search {
+  min-width: 180px;
+  max-width: 420px;
+}
+
+.cc-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-primary);
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  min-width: 0;
+  max-width: 340px;
+}
+
+.cc-status-chip .cc-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--color-accent-red);
+}
+
+.cc-status-chip.is-online .cc-dot {
+  background: var(--color-accent-green);
+  animation: pulse-dot 2s infinite;
+}
+
+.cc-status-chip .cc-chip-label {
+  color: var(--color-text-tertiary);
+  font-weight: 500;
+}
+
+.cc-status-chip .cc-chip-value {
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cc-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.cc-link-btn:hover {
+  background: var(--color-bg-input);
+  border-color: #cbd5e1;
+}
+
+.cc-link-btn:focus-visible,
+.cc-panel-link:focus-visible,
+.btn-test-voice:focus-visible {
+  outline: 2px solid var(--color-accent-primary);
+  outline-offset: 2px;
+}
+
+.cc-topbar .topbar-actions {
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.cc-topbar .topbar-user-name,
+.cc-topbar .topbar-user-role {
+  white-space: nowrap;
+}
+
+/* ---------- Page header ---------- */
+
+.cc-page-header {
+  gap: 24px;
+  align-items: flex-end;
+}
+
+.cc-page-header p {
+  max-width: 640px;
+  line-height: 1.5;
+}
+
+.cc-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+}
+
+.btn-secondary:hover {
+  background: var(--color-bg-input);
+  border-color: #cbd5e1;
+}
+
+.page-header-tag.is-offline .live-dot {
+  background: var(--color-accent-amber);
+  animation: none;
+}
+
+.page-header-tag.is-offline .live-text {
+  color: #b45309;
+}
+
+/* ---------- KPI cards ---------- */
+
+.cc-kpi-value-muted .stat-card-value .number {
+  color: var(--color-text-tertiary);
+}
+
+/* ---------- Section heading ---------- */
+
+.cc-section-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 12px;
+}
+
+.cc-section-title h2 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.cc-section-title span {
+  font-size: 0.78rem;
+  color: var(--color-text-tertiary);
+}
+
+/* ---------- Overview panels ---------- */
+
+.cc-panels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.cc-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px 22px;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.cc-panel:hover {
+  border-color: #cbd5e1;
+  box-shadow: var(--shadow-md);
+}
+
+.cc-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cc-panel-eyebrow {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.cc-panel-icon {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+}
+
+.cc-panel-icon.is-blue {
+  background: #e0ecff;
+  color: #0f52ba;
+}
+
+.cc-panel-icon.is-green {
+  background: var(--color-accent-green-light);
+  color: #047857;
+}
+
+.cc-panel-icon.is-sky {
+  background: var(--color-accent-primary-light);
+  color: #0369a1;
+}
+
+.cc-panel-title {
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1.35;
+}
+
+.cc-panel-text {
+  font-size: 0.83rem;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.cc-panel-footer {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border-light);
+}
+
+.cc-panel-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #0f52ba;
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+
+.cc-panel-link:hover {
+  text-decoration: underline;
+}
+
+.cc-panel-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+/* ---------- Agents table refinements ---------- */
+
+.agents-table .sip-endpoint,
+.agents-table .status-badge,
+.agents-table .actions-cell,
+.agents-table .channel-count,
+.agents-table .btn-test-voice {
+  white-space: nowrap;
+}
+
+.agents-table .sip-endpoint {
+  display: inline-block;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+.agents-table .btn-test-voice {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.cc-row-live td {
+  background: #f0fdf7;
+}
+
+.cc-empty-cell {
+  text-align: center;
+  padding: 28px 12px !important;
+  color: var(--color-text-tertiary);
+  font-size: 0.85rem;
+}
+
+.cc-tag {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: var(--radius-full);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.cc-tag.is-live {
+  background: var(--color-accent-green-light);
+  color: #047857;
+}
+
+.cc-tag.is-sample {
+  background: var(--color-bg-input);
+  color: var(--color-text-tertiary);
+}
+
+/* ---------- Sidebar ---------- */
+
+.cc-nav-preview {
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: var(--radius-full);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--color-bg-input);
+  color: var(--color-text-tertiary);
+}
+
+.cc-nav-live {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: #047857;
+}
+
+.cc-nav-live::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent-green);
+}
+
+.cc-health-card .sla-row + .sla-row {
+  margin-top: 6px;
+}
+
+.cc-health-value {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.cc-health-online {
+  color: #047857;
+  font-weight: 700;
+}
+
+.cc-health-offline {
+  color: var(--color-accent-red);
+  font-weight: 700;
+}
+
+/* ---------- Preview banner for sample-data pages ---------- */
+
+.cc-preview-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  margin-bottom: 20px;
+  border-radius: var(--radius-md);
+  border: 1px solid #fde68a;
+  background: var(--color-accent-amber-light);
+  color: #92400e;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.cc-preview-banner strong {
+  font-weight: 700;
+}
+
+.cc-preview-banner a {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: #92400e;
+  font-weight: 700;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 1360px) {
+  .cc-link-btn .cc-link-text,
+  .cc-topbar .topbar-user-info {
+    display: none;
+  }
+}
+
+@media (max-width: 1180px) {
+  .cc-panels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cc-status-chip {
+    max-width: 220px;
+  }
+}
+
+@media (max-width: 900px) {
+  .cc-page-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .cc-status-chip .cc-chip-label {
+    display: none;
+  }
+}
