@@ -1,126 +1,177 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Sidebar from './components/Layout/Sidebar';
 import TopBar from './components/Layout/TopBar';
 import Dashboard from './pages/Dashboard';
-import RegisterAgent, { type NewAgentFormData } from './pages/RegisterAgent';
-import ConnectedAgents, { type ConnectedAgentItem, initialAgents } from './pages/ConnectedAgents';
-import VoiceTrunks from './pages/VoiceTrunks';
-import VoiceRoutingRules from './pages/VoiceRoutingRules';
-import TelemetryLogs from './pages/TelemetryLogs';
-import SettingsPage from './pages/Settings';
+import ConversationsPage from './pages/Conversations';
+import ConnectedAgentsPage from './pages/ConnectedAgents';
+import RegisterAgent from './pages/RegisterAgent';
+import GatewayAuditPage from './pages/GatewayAudit';
+import LoginModal from './components/Auth/LoginModal';
+import { AuthProvider } from './context/AuthContext';
+import {
+  initialHealth,
+  toLiveHealth,
+  type LiveHealthSummary,
+} from './data/liveHealth';
 
-export default function App() {
-  const [activeNav, setActiveNav] = useState('telemetry');
-  const [view, setView] = useState<
-    'dashboard' | 'agents' | 'trunks' | 'routing' | 'telemetry' | 'register' | 'settings'
-  >('telemetry');
-  const [agents, setAgents] = useState<ConnectedAgentItem[]>(initialAgents);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [newAgentId, setNewAgentId] = useState<string | null>(null);
+type View = 'dashboard' | 'conversations' | 'agents' | 'gateway' | 'register';
 
-  const handleRegisterAgent = () => setView('register');
+const POLL_MS = 8000;
 
-  const handleBackToAgents = () => {
-    setActiveNav('agents');
-    setView('agents');
-  };
+function useLiveHealth(): LiveHealthSummary {
+  const [health, setHealth] = useState<LiveHealthSummary>(initialHealth);
 
-  const handleSaveAgent = (formData: NewAgentFormData) => {
-    // Generate initials for badge
-    const cleaned = formData.name.replace(/^(SLT|Mobitel)\s+/i, '').trim();
-    const words = cleaned.split(/\s+/).filter(Boolean);
-    const initials =
-      words.length >= 2
-        ? (words[0][0] + words[1][0]).toUpperCase()
-        : formData.name.slice(0, 2).toUpperCase();
+  useEffect(() => {
+    let cancelled = false;
 
-    // Generate unique ID
-    const slug = formData.name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 7);
-    const randomSuffix = Math.floor(10 + Math.random() * 90);
-    const agentId = `agt-${slug || 'bot'}-${randomSuffix}`;
+    async function poll() {
+      try {
+        const [healthRes, tierRes] = await Promise.all([
+          fetch('/health'),
+          fetch('/api/voice/tier').catch(() => null),
+        ]);
+        if (!healthRes.ok) throw new Error(`HTTP ${healthRes.status}`);
+        const body = await healthRes.json();
+        const tier = tierRes && tierRes.ok ? await tierRes.json() : null;
+        if (!cancelled) setHealth(toLiveHealth(body, tier));
+      } catch {
+        if (!cancelled) setHealth((prev) => ({ ...prev, online: false }));
+      }
+    }
 
-    const newAgent: ConnectedAgentItem = {
-      id: String(Date.now()),
-      initials: initials || 'VA',
-      badgeBg: '#0f52ba',
-      name: formData.name,
-      agentId,
-      phoneTrunk: formData.phoneTrunk ?? '',
-      status: 'Live',
-      activeCalls: 0,
-      category: formData.category,
-      sttEngine: 'Whisper v3 SLT-Sinhala/Eng',
-      ttsEngine: 'ElevenLabs Neural LK',
+    poll();
+    const timer = window.setInterval(poll, POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
     };
+  }, []);
 
-    // Prepend to top of table list
-    setAgents((prev) => [newAgent, ...prev]);
-    setNewAgentId(newAgent.id);
-    setToastMessage(`Agent '${formData.name}' registered successfully.`);
-    setActiveNav('agents');
-    setView('agents');
-  };
+  return health;
+}
 
-  const handleDismissToast = () => {
-    setToastMessage(null);
-  };
+function MainLayout() {
+  const [activeNav, setActiveNav] = useState('dashboard');
+  const [view, setView] = useState<View>('dashboard');
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const health = useLiveHealth();
 
   const handleNavChange = (id: string) => {
     setActiveNav(id);
-    if (id === 'settings') {
-      setView('settings');
-    } else if (id === 'agents') {
-      setView('agents');
-    } else if (id === 'trunks') {
-      setView('trunks');
-    } else if (id === 'routing') {
-      setView('routing');
-    } else if (id === 'telemetry') {
-      setView('telemetry');
-    } else if (id === 'dashboard') {
-      setView('dashboard');
+    if (['dashboard', 'conversations', 'agents', 'gateway'].includes(id)) {
+      setView(id as View);
     }
   };
 
-  const totalActiveAgents = 142 + Math.max(0, agents.length - initialAgents.length);
+  const renderView = () => {
+    switch (view) {
+      case 'dashboard':
+        return (
+          <Dashboard
+            onRegisterAgent={() => setView('register')}
+            onNavigateToConversations={() => {
+              setActiveNav('conversations');
+              setView('conversations');
+            }}
+            onNavigateToAgents={() => {
+              setActiveNav('agents');
+              setView('agents');
+            }}
+            health={health}
+          />
+        );
+      case 'conversations':
+        return <ConversationsPage />;
+      case 'agents':
+        return <ConnectedAgentsPage onRegisterAgent={() => setView('register')} />;
+      case 'register':
+        return (
+          <RegisterAgent
+            onBack={() => {
+              setActiveNav('agents');
+              setView('agents');
+            }}
+            onSuccess={(name) => setToastMessage(`Chatbot agent '${name}' registered successfully.`)}
+          />
+        );
+      case 'gateway':
+        return <GatewayAuditPage />;
+      default:
+        return (
+          <Dashboard
+            onRegisterAgent={() => setView('register')}
+            onNavigateToConversations={() => {
+              setActiveNav('conversations');
+              setView('conversations');
+            }}
+            onNavigateToAgents={() => {
+              setActiveNav('agents');
+              setView('agents');
+            }}
+            health={health}
+          />
+        );
+    }
+  };
 
   return (
     <div className="app-layout">
       <Sidebar
         activeNav={activeNav}
         onNavChange={handleNavChange}
-        agentsCount={totalActiveAgents}
+        health={health}
+        onOpenLoginModal={() => setIsLoginModalOpen(true)}
       />
       <div className="main-wrapper">
-        <TopBar activeNav={activeNav} />
+        <TopBar
+          activeNav={activeNav}
+          backendOnline={health.online}
+          activeBrainName={health.activeBrainName}
+          onOpenLoginModal={() => setIsLoginModalOpen(true)}
+        />
         <main className="main-content">
-          {view === 'settings' ? (
-            <SettingsPage />
-          ) : view === 'dashboard' ? (
-            <Dashboard onRegisterAgent={handleRegisterAgent} />
-          ) : view === 'register' ? (
-            <RegisterAgent onBack={handleBackToAgents} onSave={handleSaveAgent} />
-          ) : view === 'trunks' ? (
-            <VoiceTrunks />
-          ) : view === 'routing' ? (
-            <VoiceRoutingRules />
-          ) : view === 'telemetry' ? (
-            <TelemetryLogs />
-          ) : (
-            <ConnectedAgents
-              agents={agents}
-              onDeployAgent={handleRegisterAgent}
-              toastMessage={toastMessage}
-              onDismissToast={handleDismissToast}
-              newAgentId={newAgentId}
-            />
+          {toastMessage && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 16px',
+                background: 'rgba(5, 150, 105, 0.1)',
+                border: '1px solid rgba(5, 150, 105, 0.25)',
+                borderRadius: 8,
+                color: '#065f46',
+                fontSize: 13,
+                marginBottom: 20,
+              }}
+            >
+              <span>{toastMessage}</span>
+              <button
+                onClick={() => setToastMessage(null)}
+                style={{ background: 'transparent', border: 0, cursor: 'pointer', fontWeight: 600, color: '#065f46' }}
+              >
+                &times;
+              </button>
+            </div>
           )}
+          {renderView()}
         </main>
       </div>
+
+      <LoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        onSuccess={() => setToastMessage('Administrator session active.')}
+      />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <MainLayout />
+    </AuthProvider>
   );
 }
