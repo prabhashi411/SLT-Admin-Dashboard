@@ -1,92 +1,192 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Bot,
   Plus,
-  RotateCw,
+  Play,
+  Pencil,
   Trash2,
+  Power,
+  RotateCcw,
+  Lock,
   CheckCircle2,
   AlertCircle,
-  Bot,
-  Zap,
-  Power,
-  PowerOff,
-  Cpu,
+  Clock,
+  X,
+  Search,
 } from 'lucide-react';
 import { api } from '../api/client';
-import type { Agent, TestResult } from '../types/api';
 import { useAuth } from '../context/AuthContext';
+import type { Agent, TestResult } from '../types/api';
 
 interface ConnectedAgentsProps {
   onRegisterAgent: () => void;
+  onEditAgent: (agent: Agent) => void;
+  onOpenLogin: () => void;
+  onBrainChanged?: () => void;
+  searchQuery?: string;
 }
 
-export default function ConnectedAgentsPage({ onRegisterAgent }: ConnectedAgentsProps) {
-  const { adminUser } = useAuth();
+export default function ConnectedAgents({
+  onRegisterAgent,
+  onEditAgent,
+  onOpenLogin,
+  onBrainChanged,
+  searchQuery = '',
+}: ConnectedAgentsProps) {
+  const { isAuthenticated } = useAuth();
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [activeId, setActiveId] = useState<number | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [activeAgentId, setActiveAgentId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [localSearch, setLocalSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'standby'>('all');
+  const [busyId, setBusyId] = useState<number | 'deactivate' | null>(null);
 
-  // Testing modal / state
+  // Inline test drawer state
   const [testingAgent, setTestingAgent] = useState<Agent | null>(null);
-  const [testQuestion, setTestQuestion] = useState('What broadband packages are available?');
-  const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [testMessage, setTestMessage] = useState('Hello, can you check my broadband data balance?');
   const [testRunning, setTestRunning] = useState(false);
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
 
-  const fetchAgents = async () => {
+  // Native <dialog> delete confirmation state
+  const [deleteTarget, setDeleteTarget] = useState<Agent | null>(null);
+  const deleteDialogRef = useRef<HTMLDialogElement>(null);
+
+  const loadAgents = async () => {
+    if (!isAuthenticated) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const res = await api.getAgents();
-      setAgents(res.agents);
-      setActiveId(res.active_agent_id);
+      setAgents(res.agents || []);
+      setActiveAgentId(res.active_agent_id);
     } catch {
-      setError('Unable to load external agents. Please ensure you are signed in as an administrator.');
+      setError('Could not load connected chatbots. Please check your session and backend status.');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchAgents();
-  }, [adminUser]);
+    loadAgents();
+  }, [isAuthenticated]);
 
-  const handleActivate = async (id: number, name: string) => {
-    setActionMessage(null);
+  // Sync deleteTarget with native <dialog>
+  useEffect(() => {
+    const dialog = deleteDialogRef.current;
+    if (!dialog) return;
+
+    if (deleteTarget && !dialog.open) {
+      dialog.showModal();
+    } else if (!deleteTarget && dialog.open) {
+      dialog.close();
+    }
+  }, [deleteTarget]);
+
+  useEffect(() => {
+    const dialog = deleteDialogRef.current;
+    if (!dialog) return;
+
+    const handleClose = () => setDeleteTarget(null);
+    dialog.addEventListener('close', handleClose);
+
+    if (!('closedBy' in HTMLDialogElement.prototype)) {
+      const outside = (e: PointerEvent) => {
+        const r = dialog.getBoundingClientRect();
+        return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+      };
+      let pressedOutside = false;
+      const onPointerDown = (e: PointerEvent) => {
+        pressedOutside = outside(e);
+      };
+      const onPointerUp = (e: PointerEvent) => {
+        if (pressedOutside && outside(e)) dialog.close();
+      };
+      dialog.addEventListener('pointerdown', onPointerDown);
+      dialog.addEventListener('pointerup', onPointerUp);
+      return () => {
+        dialog.removeEventListener('close', handleClose);
+        dialog.removeEventListener('pointerdown', onPointerDown);
+        dialog.removeEventListener('pointerup', onPointerUp);
+      };
+    }
+
+    return () => dialog.removeEventListener('close', handleClose);
+  }, []);
+
+  const effectiveSearch = (localSearch || searchQuery).trim().toLowerCase();
+
+  const filteredAgents = useMemo(() => {
+    return agents.filter((agent) => {
+      if (statusFilter === 'active' && !agent.is_active) return false;
+      if (statusFilter === 'standby' && agent.is_active) return false;
+      if (!effectiveSearch) return true;
+      return (
+        agent.name.toLowerCase().includes(effectiveSearch) ||
+        agent.url.toLowerCase().includes(effectiveSearch)
+      );
+    });
+  }, [agents, statusFilter, effectiveSearch]);
+
+  const activeAgent = agents.find((a) => a.id === activeAgentId || a.is_active) || null;
+
+  const handleToggleActive = async (agent: Agent) => {
+    setBusyId(agent.id);
+    setError(null);
     try {
-      await api.activateAgent(id);
-      setActiveId(id);
-      setActionMessage(`'${name}' is now active and answering all customer queries.`);
-      fetchAgents();
+      if (agent.is_active) {
+        await api.deactivateAgent();
+      } else {
+        await api.activateAgent(agent.id);
+      }
+      await loadAgents();
+      onBrainChanged?.();
     } catch {
-      setError(`Failed to activate agent '${name}'.`);
+      setError(`Failed to update routing for "${agent.name}".`);
+    } finally {
+      setBusyId(null);
     }
   };
 
-  const handleDeactivate = async () => {
-    setActionMessage(null);
+  const handleDeactivateAll = async () => {
+    setBusyId('deactivate');
+    setError(null);
     try {
       await api.deactivateAgent();
-      setActiveId(null);
-      setActionMessage('Switched back to Built-in SLT Core Assistant.');
-      fetchAgents();
+      await loadAgents();
+      onBrainChanged?.();
     } catch {
-      setError('Failed to deactivate agents.');
+      setError('Failed to switch back to the Built-in SLT AI Assistant.');
+    } finally {
+      setBusyId(null);
     }
   };
 
-  const handleDelete = async (id: number, name: string) => {
-    if (!confirm(`Are you sure you want to delete external chatbot '${name}'?`)) return;
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    const id = deleteTarget.id;
+    setBusyId(id);
     try {
       await api.deleteAgent(id);
-      setActionMessage(`Deleted agent '${name}'.`);
-      fetchAgents();
+      if (testingAgent?.id === id) {
+        setTestingAgent(null);
+        setTestResult(null);
+      }
+      setDeleteTarget(null);
+      await loadAgents();
+      onBrainChanged?.();
     } catch {
-      setError(`Failed to delete agent '${name}'.`);
+      setError(`Could not delete "${deleteTarget.name}".`);
+    } finally {
+      setBusyId(null);
     }
   };
 
-  const runTest = async (agent: Agent) => {
+  const handleRunTest = async (agent: Agent) => {
+    setTestingAgent(agent);
     setTestRunning(true);
     setTestResult(null);
     try {
@@ -100,16 +200,17 @@ export default function ConnectedAgentsPage({ onRegisterAgent }: ConnectedAgents
         response_path: agent.response_path,
         timeout_seconds: agent.timeout_seconds,
         streaming: agent.streaming,
-        message: testQuestion,
+        message: testMessage,
         language: 'en',
       });
       setTestResult(res);
-    } catch (err: any) {
+      await loadAgents();
+    } catch {
       setTestResult({
         ok: false,
         reply: null,
         latency_ms: null,
-        error: err.message || 'Network request failed',
+        error: 'Request failed before reaching the chatbot endpoint.',
         raw_preview: null,
         suggested_path: null,
       });
@@ -118,374 +219,403 @@ export default function ConnectedAgentsPage({ onRegisterAgent }: ConnectedAgents
     }
   };
 
+  if (!isAuthenticated) {
+    return (
+      <div className="cc-page">
+        <div className="cc-page-header">
+          <div>
+            <h1 className="cc-page-title">External Chatbots</h1>
+            <p className="cc-page-sub">
+              Connect your own AI chatbot or webhook so the voice system speaks its answers to customers.
+            </p>
+          </div>
+        </div>
+
+        <div className="cc-auth-prompt">
+          <div className="cc-empty-icon">
+            <Lock size={22} />
+          </div>
+          <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>Administrator Sign-In Required</h2>
+          <p style={{ margin: 0, fontSize: '0.86rem', color: 'var(--color-text-secondary)', maxWidth: 440 }}>
+            Sign in to view your connected chatbot endpoints, test live responses, edit configurations, or switch the active answering brain.
+          </p>
+          <button type="button" className="cc-btn cc-btn-primary" onClick={onOpenLogin} style={{ marginTop: 6 }}>
+            <Lock size={15} />
+            <span>Sign In as Administrator</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div style={{ maxWidth: 1400, margin: '0 auto', paddingBottom: 40 }}>
-      <div className="page-header cc-page-header">
+    <div className="cc-page">
+      {/* Page Header */}
+      <div className="cc-page-header">
         <div>
-          <h1>External Chatbot Integrations</h1>
-          <p>
-            Connect partner and enterprise chatbots via HTTP/JSON. When active, all incoming voice and text queries are forwarded to the selected agent with automatic fallback.
+          <h1 className="cc-page-title">External Chatbots</h1>
+          <p className="cc-page-sub">
+            Switch between the Built-in SLT AI and any external chatbot webhook. Only one brain answers customers at a time.
           </p>
         </div>
         <div className="cc-header-actions">
-          <button className="btn-secondary" onClick={fetchAgents} disabled={loading}>
-            <RotateCw size={15} className={loading ? 'animate-spin' : ''} />
-            Refresh
-          </button>
-          <button className="btn-primary" onClick={onRegisterAgent}>
+          {activeAgent && (
+            <button
+              type="button"
+              className="cc-btn cc-btn-secondary"
+              onClick={handleDeactivateAll}
+              disabled={busyId === 'deactivate'}
+            >
+              <RotateCcw size={15} />
+              <span>{busyId === 'deactivate' ? 'Switching...' : 'Use Built-in SLT AI'}</span>
+            </button>
+          )}
+          <button type="button" className="cc-btn cc-btn-primary" onClick={onRegisterAgent}>
             <Plus size={15} />
-            Connect New Agent
+            <span>Connect Chatbot</span>
           </button>
         </div>
       </div>
 
-      {/* Active Brain Status Banner */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '16px 20px',
-        background: activeId ? 'rgba(5, 150, 105, 0.08)' : 'rgba(15, 82, 186, 0.08)',
-        border: `1px solid ${activeId ? 'rgba(5, 150, 105, 0.25)' : 'rgba(15, 82, 186, 0.25)'}`,
-        borderRadius: 10,
-        marginBottom: 24
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{
-            padding: 10,
-            borderRadius: 8,
-            background: activeId ? '#059669' : '#0f52ba',
-            color: '#fff'
-          }}>
-            <Cpu size={22} />
-          </div>
+      {/* Routing Banner */}
+      <div className={`cc-alert ${activeAgent ? 'cc-alert-success' : 'cc-alert-info'}`}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Bot size={18} />
           <div>
-            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: activeId ? '#059669' : '#0f52ba' }}>
-              Current Answering Brain
+            <strong>
+              {activeAgent
+                ? `Currently Answering: ${activeAgent.name}`
+                : 'Currently Answering: Built-in SLT AI Assistant'}
+            </strong>
+            <div style={{ fontSize: '0.78rem', opacity: 0.9 }}>
+              {activeAgent
+                ? `Incoming voice calls and chats are routed to ${activeAgent.url}`
+                : 'No external chatbot is active. Activate one below to route customer questions to it.'}
             </div>
-            <h3 style={{ margin: '3px 0 0', fontSize: 17, fontWeight: 700 }}>
-              {activeId
-                ? agents.find((a) => a.id === activeId)?.name || 'External Agent Active'
-                : 'Built-in SLT Core Assistant (Default)'}
-            </h3>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-              {activeId
-                ? 'External agent answers incoming questions. If it fails or times out, SLT Core takes over.'
-                : 'Queries are answered by SLT local knowledge RAG + Google Vertex AI / Ollama.'}
-            </span>
           </div>
         </div>
-
-        {activeId && (
+        {activeAgent && (
           <button
-            className="btn-secondary"
-            onClick={handleDeactivate}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}
+            type="button"
+            className="cc-btn cc-btn-secondary cc-btn-sm"
+            onClick={() => handleRunTest(activeAgent)}
           >
-            <PowerOff size={14} color="#b91c1c" />
-            Switch to Built-in SLT
+            <Play size={13} />
+            <span>Quick Test</span>
           </button>
         )}
       </div>
 
-      {actionMessage && (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '12px 16px',
-          background: 'rgba(5, 150, 105, 0.1)',
-          border: '1px solid rgba(5, 150, 105, 0.2)',
-          borderRadius: 8,
-          color: '#065f46',
-          fontSize: 13,
-          marginBottom: 20
-        }}>
-          <CheckCircle2 size={16} />
-          <span>{actionMessage}</span>
+      {error && (
+        <div className="cc-alert cc-alert-error">
+          <span>{error}</span>
+          <button type="button" className="cc-btn cc-btn-secondary cc-btn-sm" onClick={() => setError(null)}>
+            Dismiss
+          </button>
         </div>
       )}
 
-      {error ? (
-        <div style={{
-          padding: 30,
-          textAlign: 'center',
-          background: 'var(--card-bg, #ffffff)',
-          border: '1px solid var(--border-color, #e2e8f0)',
-          borderRadius: 10
-        }}>
-          <AlertCircle size={32} style={{ color: '#b91c1c', marginBottom: 8 }} />
-          <p style={{ color: '#b91c1c', marginBottom: 12 }}>{error}</p>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-            Sign in as an administrator to configure external chatbot endpoints.
-          </p>
+      {/* Search & Filter Toolbar */}
+      <div className="cc-toolbar">
+        <div style={{ position: 'relative', flex: '1 1 260px', maxWidth: 360 }}>
+          <div className="topbar-search" style={{ width: '100%' }}>
+            <Search size={15} className="topbar-search-icon" />
+            <input
+              type="text"
+              value={localSearch}
+              onChange={(e) => setLocalSearch(e.target.value)}
+              placeholder="Filter chatbots by name or URL..."
+              aria-label="Filter chatbots"
+            />
+          </div>
         </div>
-      ) : agents.length === 0 ? (
-        <div style={{
-          padding: 60,
-          textAlign: 'center',
-          background: 'var(--card-bg, #ffffff)',
-          border: '1px solid var(--border-color, #e2e8f0)',
-          borderRadius: 10
-        }}>
-          <Bot size={48} style={{ color: 'var(--text-muted)', opacity: 0.5, marginBottom: 12 }} />
-          <h3>No External Chatbots Registered</h3>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', maxWidth: 450, margin: '8px auto 20px' }}>
-            Register your first partner webhook to test external conversational models.
+
+        <div className="cc-segmented" role="group" aria-label="Filter chatbots by status">
+          {(['all', 'active', 'standby'] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              className={statusFilter === tab ? 'active' : ''}
+              onClick={() => setStatusFilter(tab)}
+            >
+              {tab === 'all' ? `All (${agents.length})` : tab === 'active' ? 'Active' : 'Standby'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Table or Empty State */}
+      {loading ? (
+        <div className="cc-empty-state">
+          <Clock size={24} className="spin" style={{ color: 'var(--color-accent-primary)' }} />
+          <p style={{ margin: 0, color: 'var(--color-text-secondary)' }}>Loading external chatbots...</p>
+        </div>
+      ) : filteredAgents.length === 0 ? (
+        <div className="cc-empty-state">
+          <div className="cc-empty-icon">
+            <Bot size={22} />
+          </div>
+          <h2 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>
+            {agents.length === 0 ? 'No External Chatbots Connected Yet' : 'No Matching Chatbots'}
+          </h2>
+          <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--color-text-secondary)', maxWidth: 440 }}>
+            {agents.length === 0
+              ? 'Connect an OpenAI-compatible API, Rasa bot, or any HTTP webhook in under a minute using our 1-click templates.'
+              : 'Try clearing your search filter or switching status tabs.'}
           </p>
-          <button className="btn-primary" onClick={onRegisterAgent}>
-            <Plus size={15} />
-            Connect New Agent
-          </button>
+          {agents.length === 0 && (
+            <button type="button" className="cc-btn cc-btn-primary" onClick={onRegisterAgent} style={{ marginTop: 6 }}>
+              <Plus size={15} />
+              <span>Connect Your First Chatbot</span>
+            </button>
+          )}
         </div>
       ) : (
-        <div style={{
-          background: 'var(--card-bg, #ffffff)',
-          border: '1px solid var(--border-color, #e2e8f0)',
-          borderRadius: 10,
-          overflow: 'hidden'
-        }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
+        <div className="table-wrapper" tabIndex={0} role="region" aria-labelledby="agents-table-caption">
+          <table>
+            <caption id="agents-table-caption" style={{ position: 'absolute', left: -9999 }}>
+              Connected external chatbots
+            </caption>
             <thead>
-              <tr style={{ background: 'var(--table-header, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)' }}>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Status</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Agent Name</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Endpoint URL</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Method &amp; Path</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Timeout</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600, textAlign: 'right' }}>Actions</th>
+              <tr>
+                <th scope="col">Chatbot</th>
+                <th scope="col">Endpoint</th>
+                <th scope="col">Last Health Check</th>
+                <th scope="col">Routing</th>
+                <th scope="col" style={{ textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {agents.map((agent) => {
-                const isActive = agent.id === activeId;
-                return (
-                  <tr
-                    key={agent.id}
-                    style={{
-                      borderBottom: '1px solid var(--border-color, #e2e8f0)',
-                      background: isActive ? 'rgba(5, 150, 105, 0.04)' : 'transparent'
-                    }}
-                  >
-                    <td style={{ padding: '14px 16px' }}>
-                      {isActive ? (
-                        <span style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 5,
-                          padding: '3px 8px',
-                          borderRadius: 20,
-                          fontSize: 11,
-                          fontWeight: 700,
-                          background: '#dcfce7',
-                          color: '#15803d'
-                        }}>
-                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a' }} />
-                          ACTIVE
+              {filteredAgents.map((agent) => (
+                <tr key={agent.id}>
+                  <th scope="row">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <span>{agent.name}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span className="cc-badge cc-badge-blue">
+                          {agent.streaming ? 'SSE Stream' : 'Standard JSON'}
                         </span>
-                      ) : (
-                        <span style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 5,
-                          padding: '3px 8px',
-                          borderRadius: 20,
-                          fontSize: 11,
-                          fontWeight: 600,
-                          background: '#f1f5f9',
-                          color: '#64748b'
-                        }}>
-                          Standby
-                        </span>
-                      )}
-                    </td>
-                    <td style={{ padding: '14px 16px', fontWeight: 600 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <Bot size={16} color={isActive ? '#059669' : '#0f52ba'} />
-                        <span>{agent.name}</span>
-                      </div>
-                    </td>
-                    <td style={{ padding: '14px 16px', fontFamily: 'monospace', fontSize: 12, color: 'var(--text-muted)' }}>
-                      {agent.url}
-                    </td>
-                    <td style={{ padding: '14px 16px' }}>
-                      <span style={{ fontWeight: 600, fontSize: 11, background: '#f1f5f9', padding: '2px 6px', borderRadius: 4, marginRight: 6 }}>
-                        {agent.method}
-                      </span>
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                        {agent.response_path}
-                      </span>
-                    </td>
-                    <td style={{ padding: '14px 16px', color: 'var(--text-muted)' }}>
-                      {agent.timeout_seconds}s
-                    </td>
-                    <td style={{ padding: '14px 16px', textAlign: 'right' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
-                        <button
-                          className="btn-secondary"
-                          style={{ padding: '5px 10px', fontSize: 12 }}
-                          onClick={() => {
-                            setTestingAgent(agent);
-                            setTestResult(null);
-                          }}
-                          title="Send a sample question to test this endpoint"
-                        >
-                          <Zap size={13} color="#f59e0b" /> Test
-                        </button>
-
-                        {isActive ? (
-                          <button
-                            className="btn-secondary"
-                            style={{ padding: '5px 10px', fontSize: 12, color: '#dc2626' }}
-                            onClick={handleDeactivate}
-                          >
-                            <PowerOff size={13} /> Deactivate
-                          </button>
-                        ) : (
-                          <button
-                            className="btn-primary"
-                            style={{ padding: '5px 10px', fontSize: 12, background: '#059669', borderColor: '#059669' }}
-                            onClick={() => handleActivate(agent.id, agent.name)}
-                          >
-                            <Power size={13} /> Activate
-                          </button>
+                        {agent.has_auth_header && (
+                          <span className="cc-badge cc-badge-neutral">Auth Header Set</span>
                         )}
-
-                        <button
-                          className="btn-secondary"
-                          style={{ padding: '5px 8px', color: '#dc2626' }}
-                          onClick={() => handleDelete(agent.id, agent.name)}
-                          title="Delete Agent"
-                        >
-                          <Trash2 size={13} />
-                        </button>
                       </div>
-                    </td>
-                  </tr>
-                );
-              })}
+                    </div>
+                  </th>
+
+                  <td>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <code style={{ fontSize: '0.78rem', fontFamily: 'var(--font-family-mono, monospace)', wordBreak: 'break-all' }}>
+                        {agent.method} {agent.url}
+                      </code>
+                      <span style={{ fontSize: '0.74rem', color: 'var(--color-text-tertiary)' }}>
+                        Timeout: {agent.timeout_seconds}s
+                        {agent.response_path ? ` · Reply path: ${agent.response_path}` : ' · Auto-detect reply'}
+                      </span>
+                    </div>
+                  </td>
+
+                  <td>
+                    {agent.last_status === 'ok' ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        <span className="cc-badge cc-badge-green" style={{ width: 'fit-content' }}>
+                          <CheckCircle2 size={12} />
+                          Healthy {agent.last_latency_ms ? `(${agent.last_latency_ms} ms)` : ''}
+                        </span>
+                      </div>
+                    ) : agent.last_status ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        <span className="cc-badge cc-badge-red" style={{ width: 'fit-content' }}>
+                          <AlertCircle size={12} />
+                          Error
+                        </span>
+                        {agent.last_error && (
+                          <span
+                            style={{ fontSize: '0.73rem', color: 'var(--color-accent-red)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                            title={agent.last_error}
+                          >
+                            {agent.last_error}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="cc-badge cc-badge-neutral">Not tested yet</span>
+                    )}
+                  </td>
+
+                  <td>
+                    {agent.is_active ? (
+                      <span className="cc-badge cc-badge-green">
+                        <span className="cc-dot cc-dot-ok" />
+                        Active Brain
+                      </span>
+                    ) : (
+                      <span className="cc-badge cc-badge-neutral">Standby</span>
+                    )}
+                  </td>
+
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className={`cc-btn cc-btn-sm ${agent.is_active ? 'cc-btn-secondary' : 'cc-btn-success'}`}
+                        onClick={() => handleToggleActive(agent)}
+                        disabled={busyId === agent.id}
+                        title={agent.is_active ? 'Pause and revert to Built-in SLT AI' : 'Make this the active answering brain'}
+                      >
+                        <Power size={13} />
+                        <span>{agent.is_active ? 'Deactivate' : 'Activate'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className="cc-btn cc-btn-sm cc-btn-secondary"
+                        onClick={() => handleRunTest(agent)}
+                        title="Send a live test message"
+                      >
+                        <Play size={13} />
+                        <span>Test</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className="cc-btn cc-btn-sm cc-btn-secondary"
+                        onClick={() => onEditAgent(agent)}
+                        title="Edit chatbot settings"
+                      >
+                        <Pencil size={13} />
+                        <span>Edit</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className="cc-btn cc-btn-sm cc-btn-danger"
+                        onClick={() => setDeleteTarget(agent)}
+                        aria-label={`Delete ${agent.name}`}
+                        title="Delete chatbot"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* Live Sandbox Test Modal */}
+      {/* Inline Test Sandbox */}
       {testingAgent && (
-        <div className="modal-overlay" role="dialog" aria-modal="true">
-          <div className="modal-container" style={{ maxWidth: 600 }}>
-            <div className="modal-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ padding: 8, background: 'rgba(245, 158, 11, 0.1)', borderRadius: 8, color: '#f59e0b' }}>
-                  <Zap size={18} />
-                </div>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Test Chatbot Endpoint</h3>
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{testingAgent.name} · {testingAgent.url}</span>
-                </div>
-              </div>
-              <button className="modal-close" onClick={() => setTestingAgent(null)}>
-                &times;
-              </button>
+        <section className="cc-card" aria-label="Live chatbot test sandbox">
+          <div className="cc-card-header">
+            <div>
+              <h2 className="cc-card-title">Live Test: {testingAgent.name}</h2>
+              <p className="cc-card-sub">Send a sample customer message to verify the reply before activating</p>
             </div>
-
-            <div style={{ padding: '20px 24px' }}>
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Test User Prompt</label>
-                <input
-                  type="text"
-                  value={testQuestion}
-                  onChange={(e) => setTestQuestion(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: 6,
-                    border: '1px solid var(--border-color, #e2e8f0)',
-                    fontSize: 13,
-                    boxSizing: 'border-box'
-                  }}
-                />
-              </div>
-
-              <button
-                className="btn-primary"
-                onClick={() => runTest(testingAgent)}
-                disabled={testRunning}
-                style={{ marginBottom: 20 }}
-              >
-                {testRunning ? 'Sending to Webhook...' : 'Send Test Request'}
-              </button>
-
-              {testResult && (
-                <div style={{
-                  padding: 16,
-                  borderRadius: 8,
-                  background: testResult.ok ? 'rgba(5, 150, 105, 0.05)' : 'rgba(239, 68, 68, 0.05)',
-                  border: `1px solid ${testResult.ok ? 'rgba(5, 150, 105, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: testResult.ok ? '#059669' : '#dc2626' }}>
-                      {testResult.ok ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
-                      <span>{testResult.ok ? '200 OK — Success' : 'Endpoint Error'}</span>
-                    </div>
-                    {testResult.latency_ms != null && (
-                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        ⏱️ {testResult.latency_ms} ms
-                      </span>
-                    )}
-                  </div>
-
-                  {testResult.reply && (
-                    <div style={{ fontSize: 13, lineHeight: 1.5, marginBottom: 8 }}>
-                      <strong>Extracted Reply:</strong>
-                      <div style={{ padding: 10, background: '#fff', border: '1px solid var(--border-color)', borderRadius: 6, marginTop: 4 }}>
-                        {testResult.reply}
-                      </div>
-                    </div>
-                  )}
-
-                  {testResult.error && (
-                    <div style={{ fontSize: 13, color: '#dc2626' }}>
-                      <strong>Error:</strong> {testResult.error}
-                    </div>
-                  )}
-
-                  {testResult.suggested_path && (
-                    <div style={{ fontSize: 12, marginTop: 8, color: '#0f52ba' }}>
-                      <strong>Suggested Response Path:</strong>{' '}
-                      <code style={{ background: '#eff6ff', padding: '2px 6px', borderRadius: 4 }}>
-                        {testResult.suggested_path}
-                      </code>
-                    </div>
-                  )}
-
-                  {testResult.raw_preview && (
-                    <div style={{ marginTop: 10 }}>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>Raw Server Response Preview:</span>
-                      <pre style={{
-                        margin: '4px 0 0',
-                        padding: 8,
-                        background: '#f8fafc',
-                        borderRadius: 6,
-                        fontSize: 11,
-                        overflowX: 'auto',
-                        maxHeight: 120
-                      }}>
-                        {testResult.raw_preview}
-                      </pre>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="modal-footer" style={{ borderTop: '1px solid var(--border-color)', padding: '12px 20px', display: 'flex', justifyContent: 'flex-end' }}>
-              <button className="btn-secondary" onClick={() => setTestingAgent(null)}>
-                Close
-              </button>
-            </div>
+            <button
+              type="button"
+              className="cc-dialog-close"
+              onClick={() => setTestingAgent(null)}
+              aria-label="Close test panel"
+            >
+              <X size={16} />
+            </button>
           </div>
-        </div>
+          <div className="cc-card-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <input
+                type="text"
+                className="form-input"
+                style={{ flex: '1 1 280px' }}
+                value={testMessage}
+                onChange={(e) => setTestMessage(e.target.value)}
+                placeholder="Type a sample customer question..."
+              />
+              <button
+                type="button"
+                className="cc-btn cc-btn-primary"
+                onClick={() => handleRunTest(testingAgent)}
+                disabled={testRunning}
+              >
+                <Play size={14} />
+                <span>{testRunning ? 'Sending...' : 'Send Test'}</span>
+              </button>
+            </div>
+
+            {testResult && (
+              <div className={`cc-alert ${testResult.ok ? 'cc-alert-success' : 'cc-alert-error'}`} style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}>
+                  {testResult.ok ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+                  <span>
+                    {testResult.ok
+                      ? `Reply received in ${testResult.latency_ms ?? 0} ms`
+                      : testResult.error || 'Test failed'}
+                  </span>
+                </div>
+                {testResult.reply && (
+                  <div style={{ marginTop: 4, fontSize: '0.88rem', lineHeight: 1.5 }}>
+                    <strong>Bot replied:</strong> "{testResult.reply}"
+                  </div>
+                )}
+                {testResult.suggested_path && (
+                  <div style={{ fontSize: '0.78rem' }}>
+                    Suggested response path detected: <code>{testResult.suggested_path}</code> (Click Edit to apply it.)
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </section>
       )}
+
+      {/* Native <dialog> Delete Confirmation (safe action autofocused per modern-web-guidance) */}
+      <dialog
+        ref={deleteDialogRef}
+        className="cc-dialog cc-dialog-sm"
+        aria-labelledby="delete-agent-title"
+        {...({ closedby: 'any' } as Record<string, string>)}
+      >
+        <div className="cc-dialog-header">
+          <h2 id="delete-agent-title" className="cc-dialog-title">
+            Delete External Chatbot?
+          </h2>
+          <button
+            type="button"
+            className="cc-dialog-close"
+            onClick={() => setDeleteTarget(null)}
+            aria-label="Close confirmation"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="cc-dialog-body">
+          <p style={{ margin: 0, fontSize: '0.88rem', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
+            Are you sure you want to remove <strong>{deleteTarget?.name}</strong>?
+            {deleteTarget?.is_active &&
+              ' Since it is currently active, customer replies will switch back to the Built-in SLT AI Assistant.'}
+          </p>
+        </div>
+
+        <div className="cc-dialog-footer">
+          <button
+            type="button"
+            className="cc-btn cc-btn-secondary"
+            onClick={() => setDeleteTarget(null)}
+            autoFocus
+          >
+            Keep Chatbot
+          </button>
+          <button
+            type="button"
+            className="cc-btn cc-btn-danger-solid"
+            onClick={handleConfirmDelete}
+            disabled={busyId === deleteTarget?.id}
+          >
+            {busyId === deleteTarget?.id ? 'Deleting...' : 'Delete Chatbot'}
+          </button>
+        </div>
+      </dialog>
     </div>
   );
 }
