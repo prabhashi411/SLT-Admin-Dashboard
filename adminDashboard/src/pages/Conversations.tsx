@@ -1,60 +1,145 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  MessageSquare,
   Phone,
-  RotateCw,
-  Search,
+  MessageSquare,
+  Sparkles,
+  Volume2,
+  X,
+  RefreshCw,
+  Clock,
   CheckCircle2,
   XCircle,
-  FileText,
-  Volume2,
   ChevronRight,
-  X,
-  Sparkles,
+  Lock,
+  Search,
+  FileText,
 } from 'lucide-react';
 import { api } from '../api/client';
-import type { ConversationSessionItem, ConversationDetail } from '../types/api';
 import { useAuth } from '../context/AuthContext';
+import type { ConversationSessionItem, ConversationDetail } from '../types/api';
 
-export default function ConversationsPage() {
-  const { adminUser } = useAuth();
+interface ConversationsProps {
+  searchQuery?: string;
+  onOpenLogin: () => void;
+}
+
+function formatDateTime(iso: string | null) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function formatDuration(start: string | null, end: string | null): string {
+  if (!start) return '—';
+  if (!end) return 'Active / Open';
+  const diffSec = Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 1000));
+  if (diffSec < 60) return `${diffSec}s`;
+  const mins = Math.floor(diffSec / 60);
+  const secs = diffSec % 60;
+  return `${mins}m ${secs}s`;
+}
+
+function formatLanguage(lang: string): string {
+  if (lang === 'si') return 'Sinhala';
+  if (lang === 'ta') return 'Tamil';
+  return 'English';
+}
+
+export default function Conversations({ searchQuery = '', onOpenLogin }: ConversationsProps) {
+  const { isAuthenticated } = useAuth();
   const [conversations, setConversations] = useState<ConversationSessionItem[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Filters
   const [channelFilter, setChannelFilter] = useState<'all' | 'voice' | 'chat'>('all');
   const [langFilter, setLangFilter] = useState<'all' | 'en' | 'si' | 'ta'>('all');
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [localSearch, setLocalSearch] = useState('');
 
-  // Selected for inspection
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
-  const [detailLoading, setDetailLoading] = useState<boolean>(false);
+  const [detailLoading, setDetailLoading] = useState(false);
 
-  const fetchConversations = async () => {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  const loadConversations = async () => {
+    if (!isAuthenticated) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const data = await api.getConversations(100);
-      setConversations(data);
+      const list = await api.getConversations(60);
+      setConversations(list);
     } catch {
-      setError('Unable to load conversations. Ensure you are signed in as an administrator.');
+      setError('Could not load conversation logs. Please verify your session.');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchConversations();
-  }, [adminUser]);
+    loadConversations();
+  }, [isAuthenticated]);
+
+  // Sync native <dialog> with selectedId
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    if (selectedId && !dialog.open) {
+      dialog.showModal();
+    } else if (!selectedId && dialog.open) {
+      dialog.close();
+    }
+  }, [selectedId]);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    const handleClose = () => setSelectedId(null);
+    dialog.addEventListener('close', handleClose);
+
+    if (!('closedBy' in HTMLDialogElement.prototype)) {
+      const outside = (e: PointerEvent) => {
+        const r = dialog.getBoundingClientRect();
+        return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+      };
+      let pressedOutside = false;
+      const onPointerDown = (e: PointerEvent) => {
+        pressedOutside = outside(e);
+      };
+      const onPointerUp = (e: PointerEvent) => {
+        if (pressedOutside && outside(e)) dialog.close();
+      };
+      dialog.addEventListener('pointerdown', onPointerDown);
+      dialog.addEventListener('pointerup', onPointerUp);
+      return () => {
+        dialog.removeEventListener('close', handleClose);
+        dialog.removeEventListener('pointerdown', onPointerDown);
+        dialog.removeEventListener('pointerup', onPointerUp);
+      };
+    }
+
+    return () => dialog.removeEventListener('close', handleClose);
+  }, []);
 
   const handleSelectSession = async (id: string) => {
     setSelectedId(id);
+    setDetail(null);
     setDetailLoading(true);
     try {
-      const data = await api.getConversation(id);
-      setDetail(data);
+      const full = await api.getConversation(id);
+      setDetail(full);
     } catch {
       setDetail(null);
     } finally {
@@ -62,172 +147,165 @@ export default function ConversationsPage() {
     }
   };
 
-  const filtered = conversations.filter((c) => {
-    if (channelFilter !== 'all' && c.channel !== channelFilter) return false;
-    if (langFilter !== 'all' && c.language !== langFilter) return false;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
+  const effectiveSearch = (localSearch || searchQuery).trim().toLowerCase();
+
+  const filtered = useMemo(() => {
+    return conversations.filter((c) => {
+      if (channelFilter !== 'all' && c.channel !== channelFilter) return false;
+      if (langFilter !== 'all' && c.language !== langFilter) return false;
+      if (!effectiveSearch) return true;
       return (
-        c.id.toLowerCase().includes(q) ||
-        (c.model && c.model.toLowerCase().includes(q)) ||
-        c.language.toLowerCase().includes(q)
+        c.id.toLowerCase().includes(effectiveSearch) ||
+        (c.model || '').toLowerCase().includes(effectiveSearch) ||
+        (c.provider || '').toLowerCase().includes(effectiveSearch)
       );
-    }
-    return true;
-  });
+    });
+  }, [conversations, channelFilter, langFilter, effectiveSearch]);
 
-  const formatTime = (isoString: string | null) => {
-    if (!isoString) return '—';
-    try {
-      const d = new Date(isoString);
-      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) +
-        ' (' + d.toLocaleDateString() + ')';
-    } catch {
-      return isoString;
-    }
-  };
-
-  return (
-    <div style={{ maxWidth: 1400, margin: '0 auto', paddingBottom: 40 }}>
-      <div className="page-header cc-page-header">
-        <div>
-          <h1>Conversations &amp; Quality Assurance</h1>
-          <p>
-            Audit live visitor interactions, inspect message transcripts, read AI-generated call summaries, and review consented audio recordings.
-          </p>
+  if (!isAuthenticated) {
+    return (
+      <div className="cc-page">
+        <div className="cc-page-header">
+          <div>
+            <h1 className="cc-page-title">Call & Chat Logs</h1>
+            <p className="cc-page-sub">
+              Review transcripts, AI conversation summaries, and recorded voice playback.
+            </p>
+          </div>
         </div>
-        <div className="cc-header-actions">
-          <button className="btn-secondary" onClick={fetchConversations} disabled={loading}>
-            <RotateCw size={15} className={loading ? 'animate-spin' : ''} />
-            Refresh Logs
+
+        <div className="cc-auth-prompt">
+          <div className="cc-empty-icon">
+            <Lock size={22} />
+          </div>
+          <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>Administrator Sign-In Required</h2>
+          <p style={{ margin: 0, fontSize: '0.86rem', color: 'var(--color-text-secondary)', maxWidth: 440 }}>
+            Customer transcripts and call recordings are protected. Sign in to review past voice calls and web chats.
+          </p>
+          <button type="button" className="cc-btn cc-btn-primary" onClick={onOpenLogin} style={{ marginTop: 6 }}>
+            <Lock size={15} />
+            <span>Sign In as Administrator</span>
           </button>
         </div>
       </div>
+    );
+  }
 
-      {/* Filter Bar */}
-      <div style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 12,
-        padding: '14px 18px',
-        background: 'var(--card-bg, #ffffff)',
-        border: '1px solid var(--border-color, #e2e8f0)',
-        borderRadius: 10,
-        marginBottom: 20
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)' }}>Channel:</span>
-          {(['all', 'voice', 'chat'] as const).map((ch) => (
-            <button
-              key={ch}
-              onClick={() => setChannelFilter(ch)}
-              style={{
-                padding: '5px 12px',
-                borderRadius: 20,
-                fontSize: 12,
-                fontWeight: 500,
-                cursor: 'pointer',
-                border: channelFilter === ch ? '1px solid #0f52ba' : '1px solid var(--border-color, #e2e8f0)',
-                background: channelFilter === ch ? '#0f52ba' : 'transparent',
-                color: channelFilter === ch ? '#fff' : 'inherit'
-              }}
-            >
-              {ch === 'all' ? 'All Channels' : ch === 'voice' ? '🎙️ Voice Only' : '💬 Chat Only'}
-            </button>
-          ))}
-
-          <div style={{ width: 1, height: 20, background: 'var(--border-color, #e2e8f0)', margin: '0 6px' }} />
-
-          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)' }}>Language:</span>
-          {(['all', 'en', 'si', 'ta'] as const).map((lg) => (
-            <button
-              key={lg}
-              onClick={() => setLangFilter(lg)}
-              style={{
-                padding: '5px 12px',
-                borderRadius: 20,
-                fontSize: 12,
-                fontWeight: 500,
-                cursor: 'pointer',
-                border: langFilter === lg ? '1px solid #0f52ba' : '1px solid var(--border-color, #e2e8f0)',
-                background: langFilter === lg ? '#0f52ba' : 'transparent',
-                color: langFilter === lg ? '#fff' : 'inherit'
-              }}
-            >
-              {lg === 'all' ? 'All Languages' : lg.toUpperCase()}
-            </button>
-          ))}
+  return (
+    <div className="cc-page">
+      <div className="cc-page-header">
+        <div>
+          <h1 className="cc-page-title">Call & Chat Logs</h1>
+          <p className="cc-page-sub">
+            Click any session to read the full customer transcript, AI summary, and consented audio playback.
+          </p>
         </div>
+        <button
+          type="button"
+          className="cc-btn cc-btn-secondary"
+          onClick={loadConversations}
+          disabled={loading}
+        >
+          <RefreshCw size={15} className={loading ? 'spin' : ''} />
+          <span>{loading ? 'Loading...' : 'Refresh Logs'}</span>
+        </button>
+      </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ position: 'relative', minWidth: 240 }}>
-            <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--text-muted)' }} />
+      {error && (
+        <div className="cc-alert cc-alert-error">
+          <span>{error}</span>
+          <button type="button" className="cc-btn cc-btn-secondary cc-btn-sm" onClick={() => setError(null)}>
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Filters Toolbar */}
+      <div className="cc-toolbar">
+        <div style={{ position: 'relative', flex: '1 1 240px', maxWidth: 340 }}>
+          <div className="topbar-search" style={{ width: '100%' }}>
+            <Search size={15} className="topbar-search-icon" />
             <input
               type="text"
-              placeholder="Search session ID or model..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '7px 10px 7px 30px',
-                borderRadius: 6,
-                border: '1px solid var(--border-color, #e2e8f0)',
-                fontSize: 13,
-                boxSizing: 'border-box'
-              }}
+              value={localSearch}
+              onChange={(e) => setLocalSearch(e.target.value)}
+              placeholder="Filter by session ID or AI model..."
+              aria-label="Filter conversations"
             />
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div className="cc-segmented" role="group" aria-label="Filter by channel">
+            {([
+              { id: 'all', label: 'All Channels' },
+              { id: 'voice', label: 'Voice Calls' },
+              { id: 'chat', label: 'Web Chat' },
+            ] as const).map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={channelFilter === item.id ? 'active' : ''}
+                onClick={() => setChannelFilter(item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="cc-segmented" role="group" aria-label="Filter by language">
+            {([
+              { id: 'all', label: 'All Languages' },
+              { id: 'en', label: 'English' },
+              { id: 'si', label: 'Sinhala' },
+              { id: 'ta', label: 'Tamil' },
+            ] as const).map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={langFilter === item.id ? 'active' : ''}
+                onClick={() => setLangFilter(item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Main Content Area */}
-      {error ? (
-        <div style={{
-          padding: 30,
-          textAlign: 'center',
-          background: 'var(--card-bg, #ffffff)',
-          border: '1px solid var(--border-color, #e2e8f0)',
-          borderRadius: 10
-        }}>
-          <p style={{ color: '#b91c1c', marginBottom: 12 }}>{error}</p>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-            Sign in via the top-right button to view customer session transcripts.
-          </p>
+      {/* Table or Empty State */}
+      {loading ? (
+        <div className="cc-empty-state">
+          <Clock size={24} className="spin" style={{ color: 'var(--color-accent-primary)' }} />
+          <p style={{ margin: 0, color: 'var(--color-text-secondary)' }}>Loading conversation history...</p>
         </div>
       ) : filtered.length === 0 ? (
-        <div style={{
-          padding: 60,
-          textAlign: 'center',
-          background: 'var(--card-bg, #ffffff)',
-          border: '1px solid var(--border-color, #e2e8f0)',
-          borderRadius: 10
-        }}>
-          <MessageSquare size={48} style={{ color: 'var(--text-muted)', opacity: 0.5, marginBottom: 12 }} />
-          <h3>No conversations found</h3>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', maxWidth: 450, margin: '8px auto 0' }}>
+        <div className="cc-empty-state">
+          <div className="cc-empty-icon">
+            <MessageSquare size={22} />
+          </div>
+          <h2 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>No Conversations Found</h2>
+          <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--color-text-secondary)', maxWidth: 440 }}>
             {conversations.length === 0
-              ? 'No live calls or chats have been recorded yet. Start a session at http://127.0.0.1:8000/ to see it here.'
-              : 'No sessions match your selected filter criteria.'}
+              ? 'No voice calls or web chats have been logged yet. Start a test conversation in the Customer App to see it appear here.'
+              : 'No sessions match the selected channel, language, or search filter.'}
           </p>
         </div>
       ) : (
-        <div style={{
-          background: 'var(--card-bg, #ffffff)',
-          border: '1px solid var(--border-color, #e2e8f0)',
-          borderRadius: 10,
-          overflow: 'hidden'
-        }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
+        <div className="table-wrapper" tabIndex={0} role="region" aria-labelledby="conversations-table-caption">
+          <table>
+            <caption id="conversations-table-caption" style={{ position: 'absolute', left: -9999 }}>
+              Customer voice calls and web chat sessions
+            </caption>
             <thead>
-              <tr style={{ background: 'var(--table-header, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)' }}>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Channel &amp; Session</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Started</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Language</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>AI Provider</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Audio Consent</th>
-                <th style={{ padding: '12px 16px', fontWeight: 600, textAlign: 'right' }}>Action</th>
+              <tr>
+                <th scope="col">Session</th>
+                <th scope="col">Started</th>
+                <th scope="col">Duration</th>
+                <th scope="col">Language</th>
+                <th scope="col">AI Brain</th>
+                <th scope="col">Recording</th>
+                <th scope="col" style={{ textAlign: 'right' }}>Transcript</th>
               </tr>
             </thead>
             <tbody>
@@ -236,75 +314,48 @@ export default function ConversationsPage() {
                 return (
                   <tr
                     key={session.id}
-                    style={{
-                      borderBottom: '1px solid var(--border-color, #e2e8f0)',
-                      cursor: 'pointer',
-                      background: selectedId === session.id ? 'rgba(15,82,186,0.04)' : 'transparent'
-                    }}
                     onClick={() => handleSelectSession(session.id)}
+                    style={{ cursor: 'pointer' }}
                   >
-                    <td style={{ padding: '14px 16px' }}>
+                    <th scope="row">
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div style={{
-                          padding: 7,
-                          borderRadius: 8,
-                          background: isVoice ? 'rgba(5, 150, 105, 0.1)' : 'rgba(15, 82, 186, 0.1)',
-                          color: isVoice ? '#059669' : '#0f52ba'
-                        }}>
-                          {isVoice ? <Phone size={16} /> : <MessageSquare size={16} />}
-                        </div>
-                        <div>
-                          <div style={{ fontWeight: 600, fontFamily: 'monospace', fontSize: 13 }}>
-                            {session.id.slice(0, 8)}...
-                          </div>
-                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                            {isVoice ? 'Live Voice Call' : 'Web Chat Interaction'}
-                          </span>
-                        </div>
+                        <span className={`cc-badge ${isVoice ? 'cc-badge-green' : 'cc-badge-blue'}`}>
+                          {isVoice ? <Phone size={12} /> : <MessageSquare size={12} />}
+                          {isVoice ? 'Voice' : 'Chat'}
+                        </span>
+                        <code style={{ fontSize: '0.8rem', fontFamily: 'var(--font-family-mono, monospace)' }}>
+                          {session.id.slice(0, 8)}…
+                        </code>
                       </div>
+                    </th>
+                    <td>{formatDateTime(session.started_at)}</td>
+                    <td>{formatDuration(session.started_at, session.ended_at)}</td>
+                    <td>
+                      <span className="cc-badge cc-badge-neutral">{formatLanguage(session.language)}</span>
                     </td>
-                    <td style={{ padding: '14px 16px', color: 'var(--text-muted)' }}>
-                      {formatTime(session.started_at)}
-                    </td>
-                    <td style={{ padding: '14px 16px' }}>
-                      <span style={{
-                        display: 'inline-block',
-                        padding: '3px 8px',
-                        borderRadius: 4,
-                        fontSize: 11,
-                        fontWeight: 600,
-                        background: session.language === 'si' ? '#fef3c7' : session.language === 'ta' ? '#e0e7ff' : '#f1f5f9',
-                        color: session.language === 'si' ? '#92400e' : session.language === 'ta' ? '#3730a3' : '#334155'
-                      }}>
-                        {session.language === 'si' ? 'Sinhala' : session.language === 'ta' ? 'Tamil' : 'English'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '14px 16px' }}>
-                      <span style={{ fontSize: 12, fontWeight: 500 }}>
-                        {session.model || session.provider || 'Gemini'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '14px 16px' }}>
+                    <td>{session.model || session.provider || 'SLT AI'}</td>
+                    <td>
                       {session.recording_consent ? (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#059669', fontSize: 12 }}>
-                          <CheckCircle2 size={14} /> Recorded
+                        <span className="cc-badge cc-badge-green">
+                          <CheckCircle2 size={12} /> Recorded
                         </span>
                       ) : (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text-muted)', fontSize: 12 }}>
-                          <XCircle size={14} /> No consent
+                        <span className="cc-badge cc-badge-neutral">
+                          <XCircle size={12} /> No audio
                         </span>
                       )}
                     </td>
-                    <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                    <td style={{ textAlign: 'right' }}>
                       <button
-                        className="btn-secondary"
-                        style={{ padding: '4px 10px', fontSize: 12 }}
+                        type="button"
+                        className="cc-btn cc-btn-secondary cc-btn-sm"
                         onClick={(e) => {
                           e.stopPropagation();
                           handleSelectSession(session.id);
                         }}
                       >
-                        Inspect <ChevronRight size={13} />
+                        <span>Inspect</span>
+                        <ChevronRight size={13} />
                       </button>
                     </td>
                   </tr>
@@ -315,186 +366,141 @@ export default function ConversationsPage() {
         </div>
       )}
 
-      {/* Conversation Detail Inspector Modal */}
-      {selectedId && (
-        <div className="modal-overlay" role="dialog" aria-modal="true" onClick={() => setSelectedId(null)}>
-          <div
-            className="modal-container"
-            style={{ maxWidth: 750, maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
-            onClick={(e) => e.stopPropagation()}
+      {/* Native <dialog> Transcript & Audio Inspector */}
+      <dialog
+        ref={dialogRef}
+        className="cc-dialog cc-dialog-lg"
+        aria-labelledby="conv-dialog-title"
+        {...({ closedby: 'any' } as Record<string, string>)}
+      >
+        <div className="cc-dialog-header">
+          <div>
+            <h2 id="conv-dialog-title" className="cc-dialog-title">
+              <FileText size={18} style={{ color: 'var(--primary)' }} />
+              Conversation Transcript
+            </h2>
+            {selectedId && (
+              <span style={{ fontSize: '0.75rem', color: 'var(--color-text-tertiary)', fontFamily: 'monospace' }}>
+                Session ID: {selectedId}
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            className="cc-dialog-close"
+            onClick={() => setSelectedId(null)}
+            aria-label="Close transcript dialog"
+            autoFocus
           >
-            <div className="modal-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ padding: 8, background: 'rgba(15,82,186,0.1)', borderRadius: 8, color: '#0f52ba' }}>
-                  <FileText size={18} />
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="cc-dialog-body">
+          {detailLoading ? (
+            <div className="cc-empty-state" style={{ border: 'none', padding: 28 }}>
+              <Clock size={22} className="spin" />
+              <span>Loading transcript...</span>
+            </div>
+          ) : !detail ? (
+            <div className="cc-alert cc-alert-error">Failed to load conversation details.</div>
+          ) : (
+            <>
+              {/* Quick Meta Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
+                <div className="cc-check-item" style={{ flexDirection: 'column', gap: 2 }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--color-text-tertiary)' }}>Channel</span>
+                  <strong style={{ textTransform: 'capitalize', fontSize: '0.86rem' }}>{detail.channel}</strong>
                 </div>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Conversation Transcript &amp; Audit</h3>
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                    Session ID: {selectedId}
-                  </span>
+                <div className="cc-check-item" style={{ flexDirection: 'column', gap: 2 }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--color-text-tertiary)' }}>Language</span>
+                  <strong style={{ fontSize: '0.86rem' }}>{formatLanguage(detail.language)}</strong>
+                </div>
+                <div className="cc-check-item" style={{ flexDirection: 'column', gap: 2 }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--color-text-tertiary)' }}>Duration</span>
+                  <strong style={{ fontSize: '0.86rem' }}>{formatDuration(detail.started_at, detail.ended_at)}</strong>
+                </div>
+                <div className="cc-check-item" style={{ flexDirection: 'column', gap: 2 }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--color-text-tertiary)' }}>AI Brain</span>
+                  <strong style={{ fontSize: '0.86rem' }}>{detail.model || detail.provider || 'SLT AI'}</strong>
                 </div>
               </div>
-              <button className="modal-close" onClick={() => setSelectedId(null)}>
-                <X size={18} />
-              </button>
-            </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
-              {detailLoading ? (
-                <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-                  Loading session data...
+              {/* AI Summary */}
+              {detail.summary?.text && (
+                <div className="cc-alert cc-alert-info" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}>
+                    <Sparkles size={15} />
+                    <span>AI Conversation Summary</span>
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.85rem', lineHeight: 1.5 }}>{detail.summary.text}</p>
                 </div>
-              ) : !detail ? (
-                <div style={{ textAlign: 'center', padding: 40, color: '#b91c1c' }}>
-                  Failed to load session details.
-                </div>
-              ) : (
-                <>
-                  {/* Meta strip */}
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(4, 1fr)',
-                    gap: 12,
-                    padding: 14,
-                    background: 'var(--table-header, #f8fafc)',
-                    borderRadius: 8,
-                    marginBottom: 20,
-                    fontSize: 12
-                  }}>
+              )}
+
+              {/* Consented Audio Players */}
+              {detail.recording_consent && (
+                <div className="cc-card">
+                  <div className="cc-card-header" style={{ padding: '12px 16px' }}>
+                    <h3 className="cc-card-title" style={{ fontSize: '0.88rem' }}>
+                      <Volume2 size={16} style={{ color: 'var(--color-accent-green)' }} />
+                      Recorded Audio Playback
+                    </h3>
+                  </div>
+                  <div className="cc-card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
                     <div>
-                      <span style={{ color: 'var(--text-muted)', display: 'block' }}>Channel</span>
-                      <strong style={{ textTransform: 'capitalize' }}>{detail.channel}</strong>
+                      <div style={{ fontSize: '0.76rem', fontWeight: 600, marginBottom: 6, color: 'var(--color-text-secondary)' }}>
+                        Assistant Voice
+                      </div>
+                      <audio controls style={{ width: '100%', height: 36 }} src={`/conversations/${detail.id}/audio/assistant`} />
                     </div>
                     <div>
-                      <span style={{ color: 'var(--text-muted)', display: 'block' }}>Language</span>
-                      <strong>{detail.language.toUpperCase()}</strong>
-                    </div>
-                    <div>
-                      <span style={{ color: 'var(--text-muted)', display: 'block' }}>Started</span>
-                      <strong>{formatTime(detail.started_at)}</strong>
-                    </div>
-                    <div>
-                      <span style={{ color: 'var(--text-muted)', display: 'block' }}>Audio Consent</span>
-                      <strong>{detail.recording_consent ? 'Consented' : 'None'}</strong>
+                      <div style={{ fontSize: '0.76rem', fontWeight: 600, marginBottom: 6, color: 'var(--color-text-secondary)' }}>
+                        Customer Voice
+                      </div>
+                      <audio controls style={{ width: '100%', height: 36 }} src={`/conversations/${detail.id}/audio/user`} />
                     </div>
                   </div>
-
-                  {/* AI Summary Card */}
-                  {detail.summary && detail.summary.text && (
-                    <div style={{
-                      padding: 16,
-                      background: 'rgba(15, 82, 186, 0.05)',
-                      border: '1px solid rgba(15, 82, 186, 0.2)',
-                      borderRadius: 8,
-                      marginBottom: 20
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, color: '#0f52ba', fontWeight: 600, fontSize: 13 }}>
-                        <Sparkles size={16} />
-                        <span>AI Conversation Summary</span>
-                      </div>
-                      <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: 'var(--text-dark, #1e293b)' }}>
-                        {detail.summary.text}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Consented Audio Player */}
-                  {detail.recording_consent && (
-                    <div style={{
-                      padding: 16,
-                      background: 'var(--card-bg, #ffffff)',
-                      border: '1px solid var(--border-color, #e2e8f0)',
-                      borderRadius: 8,
-                      marginBottom: 20
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12, fontWeight: 600, fontSize: 13 }}>
-                        <Volume2 size={16} color="#059669" />
-                        <span>Recorded Audio Playback (Consented Call)</span>
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                        <div>
-                          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
-                            SLT Assistant Voice
-                          </span>
-                          <audio
-                            controls
-                            style={{ width: '100%', height: 38 }}
-                            src={`/conversations/${detail.id}/audio/assistant`}
-                          >
-                            Your browser does not support the audio element.
-                          </audio>
-                        </div>
-                        <div>
-                          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
-                            Customer Caller Voice
-                          </span>
-                          <audio
-                            controls
-                            style={{ width: '100%', height: 38 }}
-                            src={`/conversations/${detail.id}/audio/user`}
-                          >
-                            Your browser does not support the audio element.
-                          </audio>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Message Bubbles */}
-                  <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>Transcripts &amp; Turns</h4>
-                  {!detail.messages || detail.messages.length === 0 ? (
-                    <p style={{ fontSize: 13, color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                      No utterances were captured for this session.
-                    </p>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      {detail.messages.map((m, i) => {
-                        const isUser = m.role === 'user';
-                        return (
-                          <div
-                            key={i}
-                            style={{
-                              alignSelf: isUser ? 'flex-end' : 'flex-start',
-                              maxWidth: '82%',
-                              padding: '10px 14px',
-                              borderRadius: isUser ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
-                              background: isUser ? '#0f52ba' : 'var(--table-header, #f1f5f9)',
-                              color: isUser ? '#ffffff' : 'inherit',
-                              fontSize: 13,
-                              lineHeight: 1.5
-                            }}
-                          >
-                            <div style={{
-                              fontSize: 11,
-                              fontWeight: 600,
-                              marginBottom: 4,
-                              opacity: 0.8,
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              gap: 10
-                            }}>
-                              <span>{isUser ? 'Customer' : 'SLT Assistant'}</span>
-                              <span>{m.at ? new Date(m.at).toLocaleTimeString() : ''}</span>
-                            </div>
-                            <div>{m.text}</div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </>
+                </div>
               )}
-            </div>
 
-            <div className="modal-footer" style={{ borderTop: '1px solid var(--border-color, #e2e8f0)', padding: '12px 20px', display: 'flex', justifyContent: 'flex-end' }}>
-              <button className="btn-secondary" onClick={() => setSelectedId(null)}>
-                Close
-              </button>
-            </div>
-          </div>
+              {/* Transcript Bubbles */}
+              <div>
+                <h3 style={{ margin: '0 0 10px', fontSize: '0.9rem', fontWeight: 700 }}>
+                  Messages ({detail.messages?.length ?? 0})
+                </h3>
+                {!detail.messages || detail.messages.length === 0 ? (
+                  <p style={{ margin: 0, fontSize: '0.84rem', color: 'var(--color-text-secondary)' }}>
+                    No messages recorded in this session.
+                  </p>
+                ) : (
+                  <div className="cc-transcript-list">
+                    {detail.messages.map((m, idx) => {
+                      const isUser = m.role === 'user';
+                      return (
+                        <div key={idx} className={`cc-msg ${isUser ? 'cc-msg-user' : 'cc-msg-assistant'}`}>
+                          <div style={{ fontSize: '0.72rem', fontWeight: 700, opacity: 0.85, marginBottom: 3 }}>
+                            {isUser ? 'Customer' : 'Assistant'}
+                          </div>
+                          <div>{m.text}</div>
+                          {m.at && (
+                            <div className="cc-msg-meta">{new Date(m.at).toLocaleTimeString()}</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
-      )}
+
+        <div className="cc-dialog-footer">
+          <button type="button" className="cc-btn cc-btn-secondary" onClick={() => setSelectedId(null)}>
+            Close
+          </button>
+        </div>
+      </dialog>
     </div>
   );
 }
