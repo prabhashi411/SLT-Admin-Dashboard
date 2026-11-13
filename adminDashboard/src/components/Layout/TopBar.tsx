@@ -1,23 +1,28 @@
-import { Search, Bell, User, ExternalLink, Wrench } from 'lucide-react';
+import { Search, User, ExternalLink, Wrench, Lock, LogOut } from 'lucide-react';
 import { ENGINEER_CONSOLE_URL, LIVE_ASSISTANT_URL } from '../../data/liveHealth';
+import { useAuth } from '../../context/AuthContext';
 
 interface TopBarProps {
   activeNav?: string;
   backendOnline?: boolean;
   activeBrainName?: string;
+  onOpenLoginModal: () => void;
 }
 
 export default function TopBar({
   activeNav = 'dashboard',
   backendOnline = false,
   activeBrainName = 'Built-in SLT Assistant',
+  onOpenLoginModal,
 }: TopBarProps) {
+  const { adminUser, logout } = useAuth();
+
   const placeholder =
-    activeNav === 'routing'
-      ? 'Search rules, agents, hotline numbers...'
-      : activeNav === 'telemetry'
-      ? 'Search sessions, call IDs, agents...'
-      : 'Search hotlines, agents, call IDs...';
+    activeNav === 'conversations'
+      ? 'Search conversations, session IDs, transcripts...'
+      : activeNav === 'agents'
+      ? 'Search external chatbots, webhooks, endpoints...'
+      : 'Search operational metrics, models, sessions...';
 
   return (
     <header className="topbar cc-topbar">
@@ -49,41 +54,56 @@ export default function TopBar({
 
       <div className="topbar-actions">
         <a
-          href={ENGINEER_CONSOLE_URL}
-          target="_blank"
-          rel="noreferrer"
-          className="cc-link-btn"
-          title="Open the Engineer Console (:8000/admin/) to connect and test chatbots"
-        >
-          <Wrench size={14} aria-hidden="true" />
-          <span className="cc-link-text">Engineer Console</span>
-        </a>
-        <a
           href={LIVE_ASSISTANT_URL}
           target="_blank"
           rel="noreferrer"
           className="cc-link-btn"
-          title="Open the live customer voice and chat assistant (:8000/)"
+          title="Open live customer voice and chat assistant (:8000/)"
         >
           <ExternalLink size={14} aria-hidden="true" />
-          <span className="cc-link-text">Live Assistant</span>
+          <span className="cc-link-text">Customer App</span>
+        </a>
+
+        <a
+          href={ENGINEER_CONSOLE_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="cc-link-btn"
+          title="Open the Classic Engineer Console (:8000/admin/)"
+        >
+          <Wrench size={14} aria-hidden="true" />
+          <span className="cc-link-text">Classic Admin</span>
         </a>
 
         <div className="topbar-divider" />
 
-        <button className="topbar-action-btn" title="Notifications" aria-label="Notifications">
-          <Bell size={18} />
-        </button>
-
-        <div className="topbar-user">
-          <div className="topbar-user-avatar">
-            <User size={16} />
+        {adminUser ? (
+          <div className="topbar-user" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div className="topbar-user-avatar" style={{ background: '#059669', color: '#fff' }}>
+              <User size={16} />
+            </div>
+            <div className="topbar-user-info">
+              <span className="topbar-user-name">{adminUser.username}</span>
+              <span className="topbar-user-role">Administrator</span>
+            </div>
+            <button
+              onClick={logout}
+              title="Sign Out"
+              className="btn-secondary"
+              style={{ padding: '4px 8px', marginLeft: 4 }}
+            >
+              <LogOut size={13} />
+            </button>
           </div>
-          <div className="topbar-user-info">
-            <span className="topbar-user-name">Eng. Perera</span>
-            <span className="topbar-user-role">Supervisor</span>
-          </div>
-        </div>
+        ) : (
+          <button
+            onClick={onOpenLoginModal}
+            className="btn-primary"
+            style={{ fontSize: 12, padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            <Lock size={13} /> Sign In
+          </button>
+        )}
       </div>
     </header>
   );

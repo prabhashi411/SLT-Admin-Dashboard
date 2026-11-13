@@ -1,593 +1,475 @@
-import { useState, useMemo, useEffect } from 'react';
-import { Plus, Search, X, Sliders, PhoneCall, Activity, Cpu, CheckCircle } from 'lucide-react';
-
-export interface ConnectedAgentItem {
-  id: string;
-  initials: string;
-  badgeBg: string;
-  name: string;
-  agentId: string;
-  phoneTrunk: string;
-  status: 'Live' | 'Standby' | 'Offline';
-  activeCalls: number;
-  category?: string;
-  sttEngine?: string;
-  ttsEngine?: string;
-}
-
-export const initialAgents: ConnectedAgentItem[] = [
-  {
-    id: '1',
-    initials: 'BB',
-    badgeBg: '#0f52ba',
-    name: 'SLT Broadband Support Bot',
-    agentId: 'agt-bb-01',
-    phoneTrunk: '+94 11 200 4500',
-    status: 'Live',
-    activeCalls: 48,
-    category: 'Broadband & Fiber Care',
-    sttEngine: 'Whisper v3 SLT-Sinhala/Eng',
-    ttsEngine: 'ElevenLabs Neural LK',
-  },
-  {
-    id: '2',
-    initials: 'BP',
-    badgeBg: '#059669',
-    name: 'Billing & Top-up Assistant',
-    agentId: 'agt-bill-04',
-    phoneTrunk: '+94 11 200 4888',
-    status: 'Live',
-    activeCalls: 92,
-    category: 'Billing & Payment Gateway',
-    sttEngine: 'Azure Neural Telephony',
-    ttsEngine: 'Google Cloud TTS Neural2',
-  },
-  {
-    id: '3',
-    initials: 'PT',
-    badgeBg: '#0284c7',
-    name: 'PeoTV Fault Triage Bot',
-    agentId: 'agt-ptv-02',
-    phoneTrunk: '+94 11 200 4700',
-    status: 'Live',
-    activeCalls: 14,
-    category: 'IPTV / OTT Diagnostics',
-    sttEngine: 'Whisper v3 LK Fine-tuned',
-    ttsEngine: 'ElevenLabs Conversational',
-  },
-  {
-    id: '4',
-    initials: 'CF',
-    badgeBg: '#1e40af',
-    name: 'Corporate Fiber Hotline',
-    agentId: 'agt-ent-09',
-    phoneTrunk: '+94 11 238 9800',
-    status: 'Live',
-    activeCalls: 36,
-    category: 'Enterprise Dedicated Lines',
-    sttEngine: 'Deepgram Nova-2 Telco',
-    ttsEngine: 'Amazon Polly Neural (English/Sinhala)',
-  },
-  {
-    id: '5',
-    initials: '5G',
-    badgeBg: '#10b981',
-    name: 'Mobitel 5G Voice Concierge',
-    agentId: 'agt-mob-12',
-    phoneTrunk: '+94 71 000 0141',
-    status: 'Live',
-    activeCalls: 63,
-    category: 'Mobile 5G & eSIM Services',
-    sttEngine: 'Whisper v3 Multilingual',
-    ttsEngine: 'ElevenLabs Sinhala-Tamil-Eng',
-  },
-  // Additional pages mock agents
-  {
-    id: '6',
-    initials: 'EE',
-    badgeBg: '#7c3aed',
-    name: 'Enterprise Cloud PBX Voice Gateway',
-    agentId: 'agt-exp-03',
-    phoneTrunk: '+94 11 244 1111',
-    status: 'Live',
-    activeCalls: 28,
-    category: 'Cloud PBX & SIP Trunking',
-    sttEngine: 'Azure Speech Enterprise',
-    ttsEngine: 'Azure Neural Speech',
-  },
-  {
-    id: '7',
-    initials: 'EB',
-    badgeBg: '#0284c7',
-    name: 'eChannelling Automated Booking',
-    agentId: 'agt-ech-08',
-    phoneTrunk: '+94 11 225 9999',
-    status: 'Live',
-    activeCalls: 75,
-    category: 'Healthcare Channeling IVR',
-    sttEngine: 'Whisper v3 Multilingual LK',
-    ttsEngine: 'Google WaveNet LK',
-  },
-  {
-    id: '8',
-    initials: 'TS',
-    badgeBg: '#059669',
-    name: 'SLT Teleshop Virtual Ordering',
-    agentId: 'agt-ts-03',
-    phoneTrunk: '+94 11 239 0000',
-    status: 'Live',
-    activeCalls: 19,
-    category: 'Retail & Hardware Support',
-    sttEngine: 'Deepgram Nova-2',
-    ttsEngine: 'ElevenLabs Natural',
-  },
-  {
-    id: '9',
-    initials: 'VP',
-    badgeBg: '#1e3a8a',
-    name: 'VIP Corporate Dedicated Trunk',
-    agentId: 'agt-vip-07',
-    phoneTrunk: '+94 11 202 2222',
-    status: 'Live',
-    activeCalls: 11,
-    category: 'Priority Enterprise Hotline',
-    sttEngine: 'Whisper Turbo On-Premise',
-    ttsEngine: 'ElevenLabs Executive',
-  },
-  {
-    id: '10',
-    initials: 'MR',
-    badgeBg: '#0f52ba',
-    name: 'Mobitel Global Roaming Helpline',
-    agentId: 'agt-roam-15',
-    phoneTrunk: '+94 71 000 0142',
-    status: 'Live',
-    activeCalls: 52,
-    category: 'International Roaming Support',
-    sttEngine: 'Deepgram Telco Low-Latency',
-    ttsEngine: 'Google Neural2',
-  },
-  {
-    id: '11',
-    initials: 'FT',
-    badgeBg: '#10b981',
-    name: 'Fiber-To-The-Home Line Diagnostic',
-    agentId: 'agt-ftth-05',
-    phoneTrunk: '+94 11 200 4600',
-    status: 'Live',
-    activeCalls: 41,
-    category: 'FTTH Core Diagnostics',
-    sttEngine: 'Vosk Offline L1 Core',
-    ttsEngine: 'Coqui FastSpeech2 LK',
-  },
-  {
-    id: '12',
-    initials: 'SM',
-    badgeBg: '#7c3aed',
-    name: 'SME Broadband Concierge',
-    agentId: 'agt-sm-18',
-    phoneTrunk: '+94 11 245 8899',
-    status: 'Live',
-    activeCalls: 33,
-    category: 'Small & Medium Business',
-    sttEngine: 'Whisper v3 English/Tamil',
-    ttsEngine: 'Azure Neural Multilingual',
-  },
-  {
-    id: '13',
-    initials: 'WF',
-    badgeBg: '#0284c7',
-    name: 'Public WiFi Hotline & SMS Auth',
-    agentId: 'agt-wifi-06',
-    phoneTrunk: '+94 11 230 4050',
-    status: 'Live',
-    activeCalls: 22,
-    category: 'Community WiFi Infrastructure',
-    sttEngine: 'Azure Neural Telephony',
-    ttsEngine: 'Google Cloud TTS',
-  },
-  {
-    id: '14',
-    initials: 'OP',
-    badgeBg: '#059669',
-    name: 'Online Bill Payment Assistance',
-    agentId: 'agt-pay-11',
-    phoneTrunk: '+94 11 200 4889',
-    status: 'Live',
-    activeCalls: 87,
-    category: 'Payment Verification',
-    sttEngine: 'Deepgram Nova-2',
-    ttsEngine: 'ElevenLabs Conversational',
-  },
-  {
-    id: '15',
-    initials: 'ES',
-    badgeBg: '#1e40af',
-    name: 'Mobitel eSIM Digital Activation',
-    agentId: 'agt-esim-20',
-    phoneTrunk: '+94 71 000 0145',
-    status: 'Live',
-    activeCalls: 60,
-    category: 'eSIM Onboarding Flow',
-    sttEngine: 'Whisper v3 Multilingual',
-    ttsEngine: 'ElevenLabs Natural',
-  },
-];
+import { useState, useEffect } from 'react';
+import {
+  Plus,
+  RotateCw,
+  Trash2,
+  CheckCircle2,
+  AlertCircle,
+  Bot,
+  Zap,
+  Power,
+  PowerOff,
+  Cpu,
+} from 'lucide-react';
+import { api } from '../api/client';
+import type { Agent, TestResult } from '../types/api';
+import { useAuth } from '../context/AuthContext';
 
 interface ConnectedAgentsProps {
-  agents?: ConnectedAgentItem[];
-  onDeployAgent: () => void;
-  onConfigureAgent?: (agent: ConnectedAgentItem) => void;
-  toastMessage?: string | null;
-  onDismissToast?: () => void;
-  newAgentId?: string | null;
+  onRegisterAgent: () => void;
 }
 
-export default function ConnectedAgents({
-  agents = initialAgents,
-  onDeployAgent,
-  onConfigureAgent,
-  toastMessage,
-  onDismissToast,
-  newAgentId,
-}: ConnectedAgentsProps) {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [selectedAgent, setSelectedAgent] = useState<ConnectedAgentItem | null>(null);
-  const itemsPerPage = 5;
+export default function ConnectedAgentsPage({ onRegisterAgent }: ConnectedAgentsProps) {
+  const { adminUser } = useAuth();
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [activeId, setActiveId] = useState<number | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
-  // Auto-dismiss toast
+  // Testing modal / state
+  const [testingAgent, setTestingAgent] = useState<Agent | null>(null);
+  const [testQuestion, setTestQuestion] = useState('What broadband packages are available?');
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [testRunning, setTestRunning] = useState(false);
+
+  const fetchAgents = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.getAgents();
+      setAgents(res.agents);
+      setActiveId(res.active_agent_id);
+    } catch {
+      setError('Unable to load external agents. Please ensure you are signed in as an administrator.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    if (toastMessage && onDismissToast) {
-      const timer = setTimeout(() => {
-        onDismissToast();
-      }, 6000);
-      return () => clearTimeout(timer);
-    }
-  }, [toastMessage, onDismissToast]);
+    fetchAgents();
+  }, [adminUser]);
 
-  const addedCount = Math.max(0, agents.length - initialAgents.length);
-  const canonicalTotal = 142 + addedCount;
-
-  // Filter agents based on search query
-  const filteredAgents = useMemo(() => {
-    if (!searchQuery.trim()) return agents;
-    const q = searchQuery.toLowerCase().trim();
-    return agents.filter(
-      (agent) =>
-        agent.name.toLowerCase().includes(q) ||
-        agent.agentId.toLowerCase().includes(q) ||
-        agent.phoneTrunk.toLowerCase().includes(q)
-    );
-  }, [agents, searchQuery]);
-
-  // Pagination calculation
-  const totalDisplayCount = searchQuery.trim() ? filteredAgents.length : canonicalTotal;
-  const totalPages = searchQuery.trim()
-    ? Math.max(1, Math.ceil(filteredAgents.length / itemsPerPage))
-    : Math.ceil(canonicalTotal / itemsPerPage);
-
-  const currentItems = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return filteredAgents.slice(startIndex, startIndex + itemsPerPage);
-  }, [filteredAgents, currentPage]);
-
-  const handlePageChange = (newPage: number) => {
-    if (newPage >= 1 && newPage <= totalPages) {
-      setCurrentPage(newPage);
+  const handleActivate = async (id: number, name: string) => {
+    setActionMessage(null);
+    try {
+      await api.activateAgent(id);
+      setActiveId(id);
+      setActionMessage(`'${name}' is now active and answering all customer queries.`);
+      fetchAgents();
+    } catch {
+      setError(`Failed to activate agent '${name}'.`);
     }
   };
 
-  const handleConfigure = (agent: ConnectedAgentItem) => {
-    setSelectedAgent(agent);
-    if (onConfigureAgent) {
-      onConfigureAgent(agent);
+  const handleDeactivate = async () => {
+    setActionMessage(null);
+    try {
+      await api.deactivateAgent();
+      setActiveId(null);
+      setActionMessage('Switched back to Built-in SLT Core Assistant.');
+      fetchAgents();
+    } catch {
+      setError('Failed to deactivate agents.');
     }
   };
 
-  const startRecord = (currentPage - 1) * itemsPerPage + 1;
-  const endRecord = Math.min(startRecord + currentItems.length - 1, totalDisplayCount);
+  const handleDelete = async (id: number, name: string) => {
+    if (!confirm(`Are you sure you want to delete external chatbot '${name}'?`)) return;
+    try {
+      await api.deleteAgent(id);
+      setActionMessage(`Deleted agent '${name}'.`);
+      fetchAgents();
+    } catch {
+      setError(`Failed to delete agent '${name}'.`);
+    }
+  };
+
+  const runTest = async (agent: Agent) => {
+    setTestRunning(true);
+    setTestResult(null);
+    try {
+      const res = await api.testAgent({
+        name: agent.name,
+        url: agent.url,
+        method: agent.method,
+        auth_header_name: agent.auth_header_name,
+        body_template: agent.body_template,
+        response_path: agent.response_path,
+        timeout_seconds: agent.timeout_seconds,
+        message: testQuestion,
+        language: 'en',
+      });
+      setTestResult(res);
+    } catch (err: any) {
+      setTestResult({
+        ok: false,
+        reply: null,
+        latency_ms: null,
+        error: err.message || 'Network request failed',
+        raw_preview: null,
+        suggested_path: null,
+      });
+    } finally {
+      setTestRunning(false);
+    }
+  };
 
   return (
-    <div className="connected-agents-page">
-      {/* Header */}
-      <div className="connected-header">
-        <div className="connected-header-info">
-          <h1 className="connected-title">Connected Agents</h1>
-          <p className="connected-subtitle">
-            Manage and monitor active voice agents and SIP routing endpoints.
+    <div style={{ maxWidth: 1400, margin: '0 auto', paddingBottom: 40 }}>
+      <div className="page-header cc-page-header">
+        <div>
+          <h1>External Chatbot Integrations</h1>
+          <p>
+            Connect partner and enterprise chatbots via HTTP/JSON. When active, all incoming voice and text queries are forwarded to the selected agent with automatic fallback.
           </p>
         </div>
-        <button
-          id="btn-deploy-agent"
-          className="btn-deploy-agent"
-          onClick={onDeployAgent}
-        >
-          <Plus size={16} />
-          <span>Deploy Agent</span>
-        </button>
+        <div className="cc-header-actions">
+          <button className="btn-secondary" onClick={fetchAgents} disabled={loading}>
+            <RotateCw size={15} className={loading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+          <button className="btn-primary" onClick={onRegisterAgent}>
+            <Plus size={15} />
+            Connect New Agent
+          </button>
+        </div>
       </div>
 
-      {/* Success Alert / Toast Message */}
-      {toastMessage && (
-        <div className="connected-toast-alert" role="alert">
-          <div className="toast-left">
-            <div className="toast-icon-circle">
-              <CheckCircle size={17} />
-            </div>
-            <div className="toast-text-group">
-              <span className="toast-headline">Success</span>
-              <span className="toast-body">{toastMessage}</span>
-            </div>
+      {/* Active Brain Status Banner */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '16px 20px',
+        background: activeId ? 'rgba(5, 150, 105, 0.08)' : 'rgba(15, 82, 186, 0.08)',
+        border: `1px solid ${activeId ? 'rgba(5, 150, 105, 0.25)' : 'rgba(15, 82, 186, 0.25)'}`,
+        borderRadius: 10,
+        marginBottom: 24
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{
+            padding: 10,
+            borderRadius: 8,
+            background: activeId ? '#059669' : '#0f52ba',
+            color: '#fff'
+          }}>
+            <Cpu size={22} />
           </div>
-          {onDismissToast && (
-            <button
-              className="toast-close-btn"
-              onClick={onDismissToast}
-              aria-label="Dismiss alert"
-            >
-              <X size={15} />
-            </button>
-          )}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: activeId ? '#059669' : '#0f52ba' }}>
+              Current Answering Brain
+            </div>
+            <h3 style={{ margin: '3px 0 0', fontSize: 17, fontWeight: 700 }}>
+              {activeId
+                ? agents.find((a) => a.id === activeId)?.name || 'External Agent Active'
+                : 'Built-in SLT Core Assistant (Default)'}
+            </h3>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              {activeId
+                ? 'External agent answers incoming questions. If it fails or times out, SLT Core takes over.'
+                : 'Queries are answered by SLT local knowledge RAG + Google Vertex AI / Ollama.'}
+            </span>
+          </div>
+        </div>
+
+        {activeId && (
+          <button
+            className="btn-secondary"
+            onClick={handleDeactivate}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}
+          >
+            <PowerOff size={14} color="#b91c1c" />
+            Switch to Built-in SLT
+          </button>
+        )}
+      </div>
+
+      {actionMessage && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '12px 16px',
+          background: 'rgba(5, 150, 105, 0.1)',
+          border: '1px solid rgba(5, 150, 105, 0.2)',
+          borderRadius: 8,
+          color: '#065f46',
+          fontSize: 13,
+          marginBottom: 20
+        }}>
+          <CheckCircle2 size={16} />
+          <span>{actionMessage}</span>
         </div>
       )}
 
-      {/* Toolbar / Search & Active Counter */}
-      <div className="connected-toolbar">
-        <div className="connected-search-box">
-          <Search size={16} className="connected-search-icon" />
-          <input
-            id="connected-search-input"
-            type="text"
-            placeholder="Search agents by name, ID, or phone..."
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setCurrentPage(1);
-            }}
-          />
+      {error ? (
+        <div style={{
+          padding: 30,
+          textAlign: 'center',
+          background: 'var(--card-bg, #ffffff)',
+          border: '1px solid var(--border-color, #e2e8f0)',
+          borderRadius: 10
+        }}>
+          <AlertCircle size={32} style={{ color: '#b91c1c', marginBottom: 8 }} />
+          <p style={{ color: '#b91c1c', marginBottom: 12 }}>{error}</p>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+            Sign in as an administrator to configure external chatbot endpoints.
+          </p>
         </div>
-        <div className="connected-active-badge">
-          <span className="active-dot" />
-          <span>{canonicalTotal} Agents Active</span>
+      ) : agents.length === 0 ? (
+        <div style={{
+          padding: 60,
+          textAlign: 'center',
+          background: 'var(--card-bg, #ffffff)',
+          border: '1px solid var(--border-color, #e2e8f0)',
+          borderRadius: 10
+        }}>
+          <Bot size={48} style={{ color: 'var(--text-muted)', opacity: 0.5, marginBottom: 12 }} />
+          <h3>No External Chatbots Registered</h3>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', maxWidth: 450, margin: '8px auto 20px' }}>
+            Register your first partner webhook to test external conversational models.
+          </p>
+          <button className="btn-primary" onClick={onRegisterAgent}>
+            <Plus size={15} />
+            Connect New Agent
+          </button>
         </div>
-      </div>
-
-      {/* Agents Table Container */}
-      <div className="connected-table-card">
-        <table className="connected-table">
-          <thead>
-            <tr>
-              <th className="col-agent">Agent Name &amp; ID</th>
-              <th className="col-phone">Phone / Trunk</th>
-              <th className="col-status">Status</th>
-              <th className="col-calls">Active Calls</th>
-              <th className="col-action">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {currentItems.length > 0 ? (
-              currentItems.map((agent) => (
-                <tr
-                  key={agent.id}
-                  className={`connected-table-row ${agent.id === newAgentId ? 'newly-added-row' : ''}`}
-                >
-                  {/* Agent Name & ID */}
-                  <td className="col-agent">
-                    <div className="agent-identity">
-                      <div
-                        className="agent-avatar"
-                        style={{ backgroundColor: agent.badgeBg }}
-                      >
-                        {agent.initials}
-                      </div>
-                      <div className="agent-meta">
-                        <div className="agent-title-row">
-                          <span className="agent-title">{agent.name}</span>
-                          {agent.id === newAgentId && (
-                            <span className="badge-new-agent">New</span>
-                          )}
-                        </div>
-                        <span className="agent-id">{agent.agentId}</span>
-                      </div>
-                    </div>
-                  </td>
-
-                  {/* Phone / Trunk */}
-                  <td className="col-phone">
-                    <span className="agent-phone">{agent.phoneTrunk}</span>
-                  </td>
-
-                  {/* Status */}
-                  <td className="col-status">
-                    <span className="status-pill-live">
-                      <span className="status-live-dot" />
-                      {agent.status}
-                    </span>
-                  </td>
-
-                  {/* Active Calls */}
-                  <td className="col-calls">
-                    <span className="agent-calls-count">{agent.activeCalls} calls</span>
-                  </td>
-
-                  {/* Action */}
-                  <td className="col-action">
-                    <button
-                      className="btn-configure-action"
-                      onClick={() => handleConfigure(agent)}
-                    >
-                      Configure
-                    </button>
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={5} className="connected-empty-state">
-                  No agents found matching &ldquo;{searchQuery}&rdquo;
-                </td>
+      ) : (
+        <div style={{
+          background: 'var(--card-bg, #ffffff)',
+          border: '1px solid var(--border-color, #e2e8f0)',
+          borderRadius: 10,
+          overflow: 'hidden'
+        }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: 'var(--table-header, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)' }}>
+                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Status</th>
+                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Agent Name</th>
+                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Endpoint URL</th>
+                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Method &amp; Path</th>
+                <th style={{ padding: '12px 16px', fontWeight: 600 }}>Timeout</th>
+                <th style={{ padding: '12px 16px', fontWeight: 600, textAlign: 'right' }}>Actions</th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {agents.map((agent) => {
+                const isActive = agent.id === activeId;
+                return (
+                  <tr
+                    key={agent.id}
+                    style={{
+                      borderBottom: '1px solid var(--border-color, #e2e8f0)',
+                      background: isActive ? 'rgba(5, 150, 105, 0.04)' : 'transparent'
+                    }}
+                  >
+                    <td style={{ padding: '14px 16px' }}>
+                      {isActive ? (
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          padding: '3px 8px',
+                          borderRadius: 20,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          background: '#dcfce7',
+                          color: '#15803d'
+                        }}>
+                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a' }} />
+                          ACTIVE
+                        </span>
+                      ) : (
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          padding: '3px 8px',
+                          borderRadius: 20,
+                          fontSize: 11,
+                          fontWeight: 600,
+                          background: '#f1f5f9',
+                          color: '#64748b'
+                        }}>
+                          Standby
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ padding: '14px 16px', fontWeight: 600 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Bot size={16} color={isActive ? '#059669' : '#0f52ba'} />
+                        <span>{agent.name}</span>
+                      </div>
+                    </td>
+                    <td style={{ padding: '14px 16px', fontFamily: 'monospace', fontSize: 12, color: 'var(--text-muted)' }}>
+                      {agent.url}
+                    </td>
+                    <td style={{ padding: '14px 16px' }}>
+                      <span style={{ fontWeight: 600, fontSize: 11, background: '#f1f5f9', padding: '2px 6px', borderRadius: 4, marginRight: 6 }}>
+                        {agent.method}
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        {agent.response_path}
+                      </span>
+                    </td>
+                    <td style={{ padding: '14px 16px', color: 'var(--text-muted)' }}>
+                      {agent.timeout_seconds}s
+                    </td>
+                    <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
+                        <button
+                          className="btn-secondary"
+                          style={{ padding: '5px 10px', fontSize: 12 }}
+                          onClick={() => {
+                            setTestingAgent(agent);
+                            setTestResult(null);
+                          }}
+                          title="Send a sample question to test this endpoint"
+                        >
+                          <Zap size={13} color="#f59e0b" /> Test
+                        </button>
 
-        {/* Footer / Pagination */}
-        <div className="connected-table-footer">
-          <div className="connected-footer-info">
-            Showing <span className="highlight-num">{startRecord}</span> -{' '}
-            <span className="highlight-num">{endRecord}</span> of{' '}
-            <span className="highlight-num">{totalDisplayCount}</span> Connected Agents
-          </div>
+                        {isActive ? (
+                          <button
+                            className="btn-secondary"
+                            style={{ padding: '5px 10px', fontSize: 12, color: '#dc2626' }}
+                            onClick={handleDeactivate}
+                          >
+                            <PowerOff size={13} /> Deactivate
+                          </button>
+                        ) : (
+                          <button
+                            className="btn-primary"
+                            style={{ padding: '5px 10px', fontSize: 12, background: '#059669', borderColor: '#059669' }}
+                            onClick={() => handleActivate(agent.id, agent.name)}
+                          >
+                            <Power size={13} /> Activate
+                          </button>
+                        )}
 
-          <div className="connected-pagination">
-            <button
-              className="pagination-btn pagination-nav"
-              disabled={currentPage === 1}
-              onClick={() => handlePageChange(currentPage - 1)}
-            >
-              Previous
-            </button>
-
-            <button
-              className={`pagination-btn pagination-page ${currentPage === 1 ? 'active' : ''}`}
-              onClick={() => handlePageChange(1)}
-            >
-              1
-            </button>
-
-            {totalPages >= 2 && (
-              <button
-                className={`pagination-btn pagination-page ${currentPage === 2 ? 'active' : ''}`}
-                onClick={() => handlePageChange(2)}
-              >
-                2
-              </button>
-            )}
-
-            {totalPages >= 3 && (
-              <button
-                className={`pagination-btn pagination-page ${currentPage === 3 ? 'active' : ''}`}
-                onClick={() => handlePageChange(3)}
-              >
-                3
-              </button>
-            )}
-
-            {totalPages > 4 && <span className="pagination-ellipsis">...</span>}
-
-            {totalPages > 3 && (
-              <button
-                className={`pagination-btn pagination-page ${currentPage === totalPages ? 'active' : ''}`}
-                onClick={() => handlePageChange(totalPages)}
-              >
-                {totalPages}
-              </button>
-            )}
-
-            <button
-              className="pagination-btn pagination-nav"
-              disabled={currentPage === totalPages}
-              onClick={() => handlePageChange(currentPage + 1)}
-            >
-              Next
-            </button>
-          </div>
+                        <button
+                          className="btn-secondary"
+                          style={{ padding: '5px 8px', color: '#dc2626' }}
+                          onClick={() => handleDelete(agent.id, agent.name)}
+                          title="Delete Agent"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-      </div>
+      )}
 
-      {/* Quick Configure Modal / Details Drawer */}
-      {selectedAgent && (
-        <div className="configure-modal-backdrop" onClick={() => setSelectedAgent(null)}>
-          <div className="configure-modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="configure-modal-header">
-              <div className="configure-header-agent">
-                <div
-                  className="agent-avatar large"
-                  style={{ backgroundColor: selectedAgent.badgeBg }}
-                >
-                  {selectedAgent.initials}
+      {/* Live Sandbox Test Modal */}
+      {testingAgent && (
+        <div className="modal-overlay" role="dialog" aria-modal="true">
+          <div className="modal-container" style={{ maxWidth: 600 }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ padding: 8, background: 'rgba(245, 158, 11, 0.1)', borderRadius: 8, color: '#f59e0b' }}>
+                  <Zap size={18} />
                 </div>
                 <div>
-                  <h3 className="configure-modal-title">{selectedAgent.name}</h3>
-                  <p className="configure-modal-sub">
-                    {selectedAgent.agentId} &bull; {selectedAgent.category || 'Telephony Layer'}
-                  </p>
+                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Test Chatbot Endpoint</h3>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{testingAgent.name} · {testingAgent.url}</span>
                 </div>
               </div>
-              <button
-                className="configure-modal-close"
-                onClick={() => setSelectedAgent(null)}
-                aria-label="Close"
-              >
-                <X size={18} />
+              <button className="modal-close" onClick={() => setTestingAgent(null)}>
+                &times;
               </button>
             </div>
 
-            <div className="configure-modal-body">
-              <div className="configure-detail-grid">
-                <div className="configure-detail-item">
-                  <div className="detail-label">
-                    <PhoneCall size={14} /> SIP Direct Line / Ingress
-                  </div>
-                  <div className="detail-value font-mono">{selectedAgent.phoneTrunk}</div>
-                </div>
-
-                <div className="configure-detail-item">
-                  <div className="detail-label">
-                    <Activity size={14} /> Pipeline Status
-                  </div>
-                  <div className="detail-value">
-                    <span className="status-pill-live">
-                      <span className="status-live-dot" />
-                      {selectedAgent.status} &bull; 99.98% SLA
-                    </span>
-                  </div>
-                </div>
-
-                <div className="configure-detail-item">
-                  <div className="detail-label">
-                    <Cpu size={14} /> Active Concurrency
-                  </div>
-                  <div className="detail-value font-mono">
-                    {selectedAgent.activeCalls} simultaneous calls
-                  </div>
-                </div>
-
-                <div className="configure-detail-item">
-                  <div className="detail-label">
-                    <Sliders size={14} /> Speech Pipeline STT / TTS
-                  </div>
-                  <div className="detail-value">
-                    {selectedAgent.sttEngine || 'Whisper v3'} &rarr;{' '}
-                    {selectedAgent.ttsEngine || 'ElevenLabs Neural'}
-                  </div>
-                </div>
+            <div style={{ padding: '20px 24px' }}>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Test User Prompt</label>
+                <input
+                  type="text"
+                  value={testQuestion}
+                  onChange={(e) => setTestQuestion(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    borderRadius: 6,
+                    border: '1px solid var(--border-color, #e2e8f0)',
+                    fontSize: 13,
+                    boxSizing: 'border-box'
+                  }}
+                />
               </div>
 
-              <div className="configure-notice">
-                <CheckCircle size={15} className="notice-icon" />
-                <span>
-                  Audio ingress routes via Colombo SBC Cluster 01 with low-latency media proxying enabled.
-                </span>
-              </div>
+              <button
+                className="btn-primary"
+                onClick={() => runTest(testingAgent)}
+                disabled={testRunning}
+                style={{ marginBottom: 20 }}
+              >
+                {testRunning ? 'Sending to Webhook...' : 'Send Test Request'}
+              </button>
+
+              {testResult && (
+                <div style={{
+                  padding: 16,
+                  borderRadius: 8,
+                  background: testResult.ok ? 'rgba(5, 150, 105, 0.05)' : 'rgba(239, 68, 68, 0.05)',
+                  border: `1px solid ${testResult.ok ? 'rgba(5, 150, 105, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: testResult.ok ? '#059669' : '#dc2626' }}>
+                      {testResult.ok ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+                      <span>{testResult.ok ? '200 OK — Success' : 'Endpoint Error'}</span>
+                    </div>
+                    {testResult.latency_ms != null && (
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        ⏱️ {testResult.latency_ms} ms
+                      </span>
+                    )}
+                  </div>
+
+                  {testResult.reply && (
+                    <div style={{ fontSize: 13, lineHeight: 1.5, marginBottom: 8 }}>
+                      <strong>Extracted Reply:</strong>
+                      <div style={{ padding: 10, background: '#fff', border: '1px solid var(--border-color)', borderRadius: 6, marginTop: 4 }}>
+                        {testResult.reply}
+                      </div>
+                    </div>
+                  )}
+
+                  {testResult.error && (
+                    <div style={{ fontSize: 13, color: '#dc2626' }}>
+                      <strong>Error:</strong> {testResult.error}
+                    </div>
+                  )}
+
+                  {testResult.raw_preview && (
+                    <div style={{ marginTop: 10 }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>Raw Server Response Preview:</span>
+                      <pre style={{
+                        margin: '4px 0 0',
+                        padding: 8,
+                        background: '#f8fafc',
+                        borderRadius: 6,
+                        fontSize: 11,
+                        overflowX: 'auto',
+                        maxHeight: 120
+                      }}>
+                        {testResult.raw_preview}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
-            <div className="configure-modal-footer">
-              <button
-                className="btn-configure-dismiss"
-                onClick={() => setSelectedAgent(null)}
-              >
+            <div className="modal-footer" style={{ borderTop: '1px solid var(--border-color)', padding: '12px 20px', display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="btn-secondary" onClick={() => setTestingAgent(null)}>
                 Close
-              </button>
-              <button
-                className="btn-configure-primary"
-                onClick={() => {
-                  setSelectedAgent(null);
-                  onDeployAgent();
-                }}
-              >
-                Edit Voice Pipeline
               </button>
             </div>
           </div>
