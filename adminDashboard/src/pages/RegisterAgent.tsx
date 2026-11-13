@@ -22,6 +22,7 @@ export default function RegisterAgent({ onBack, onSuccess }: RegisterAgentProps)
   const [bodyTemplate, setBodyTemplate] = useState('{"message": "{text}"}');
   const [responsePath, setResponsePath] = useState('json.message');
   const [timeoutSeconds, setTimeoutSeconds] = useState(15);
+  const [streaming, setStreaming] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -45,6 +46,7 @@ export default function RegisterAgent({ onBack, onSuccess }: RegisterAgentProps)
         body_template: bodyTemplate,
         response_path: responsePath,
         timeout_seconds: timeoutSeconds,
+        streaming,
         message: testPrompt,
         language: 'en',
       });
@@ -82,6 +84,7 @@ export default function RegisterAgent({ onBack, onSuccess }: RegisterAgentProps)
         body_template: bodyTemplate,
         response_path: responsePath,
         timeout_seconds: timeoutSeconds,
+        streaming,
       });
       onSuccess?.(name.trim());
       onBack();
@@ -299,25 +302,36 @@ export default function RegisterAgent({ onBack, onSuccess }: RegisterAgentProps)
             </div>
           </div>
 
-          <div style={{ width: 220 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
-              Timeout (Seconds)
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 24 }}>
+            <div style={{ width: 220 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+                Timeout (Seconds)
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={60}
+                value={timeoutSeconds}
+                onChange={(e) => setTimeoutSeconds(Number(e.target.value))}
+                style={{
+                  width: '100%',
+                  padding: '9px 12px',
+                  borderRadius: 6,
+                  border: '1px solid var(--border-color, #e2e8f0)',
+                  fontSize: 13,
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, marginTop: 20 }}>
+              <input
+                type="checkbox"
+                checked={streaming}
+                onChange={(e) => setStreaming(e.target.checked)}
+              />
+              Enable Server-Sent Events (SSE) Streaming
             </label>
-            <input
-              type="number"
-              min={1}
-              max={60}
-              value={timeoutSeconds}
-              onChange={(e) => setTimeoutSeconds(Number(e.target.value))}
-              style={{
-                width: '100%',
-                padding: '9px 12px',
-                borderRadius: 6,
-                border: '1px solid var(--border-color, #e2e8f0)',
-                fontSize: 13,
-                boxSizing: 'border-box'
-              }}
-            />
           </div>
         </div>
 
@@ -394,6 +408,32 @@ export default function RegisterAgent({ onBack, onSuccess }: RegisterAgentProps)
 
               {testResult.error && (
                 <div style={{ fontSize: 13, color: '#dc2626' }}>{testResult.error}</div>
+              )}
+
+              {testResult.suggested_path && (
+                <div style={{ fontSize: 12, marginTop: 8, color: '#0f52ba' }}>
+                  <strong>Suggested Response Path:</strong>{' '}
+                  <code style={{ background: '#eff6ff', padding: '2px 6px', borderRadius: 4 }}>
+                    {testResult.suggested_path}
+                  </code>
+                </div>
+              )}
+
+              {testResult.raw_preview && (
+                <div style={{ marginTop: 10 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>Raw Server Response Preview:</span>
+                  <pre style={{
+                    margin: '4px 0 0',
+                    padding: 8,
+                    background: '#f8fafc',
+                    borderRadius: 6,
+                    fontSize: 11,
+                    overflowX: 'auto',
+                    maxHeight: 120
+                  }}>
+                    {testResult.raw_preview}
+                  </pre>
+                </div>
               )}
             </div>
           )}

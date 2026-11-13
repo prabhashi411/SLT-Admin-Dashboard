@@ -91,6 +91,7 @@ export default function ConnectedAgentsPage({ onRegisterAgent }: ConnectedAgents
     setTestResult(null);
     try {
       const res = await api.testAgent({
+        id: agent.id,
         name: agent.name,
         url: agent.url,
         method: agent.method,
@@ -98,6 +99,7 @@ export default function ConnectedAgentsPage({ onRegisterAgent }: ConnectedAgents
         body_template: agent.body_template,
         response_path: agent.response_path,
         timeout_seconds: agent.timeout_seconds,
+        streaming: agent.streaming,
         message: testQuestion,
         language: 'en',
       });
@@ -444,6 +446,15 @@ export default function ConnectedAgentsPage({ onRegisterAgent }: ConnectedAgents
                   {testResult.error && (
                     <div style={{ fontSize: 13, color: '#dc2626' }}>
                       <strong>Error:</strong> {testResult.error}
+                    </div>
+                  )}
+
+                  {testResult.suggested_path && (
+                    <div style={{ fontSize: 12, marginTop: 8, color: '#0f52ba' }}>
+                      <strong>Suggested Response Path:</strong>{' '}
+                      <code style={{ background: '#eff6ff', padding: '2px 6px', borderRadius: 4 }}>
+                        {testResult.suggested_path}
+                      </code>
                     </div>
                   )}
 
