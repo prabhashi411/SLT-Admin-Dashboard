@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Lock, X, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -10,12 +10,60 @@ interface LoginModalProps {
 
 export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
   const { login } = useAuth();
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  if (!isOpen) return null;
+  // Sync open prop with native <dialog> top-layer modal API
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    if (isOpen && !dialog.open) {
+      setError(null);
+      dialog.showModal();
+    } else if (!isOpen && dialog.open) {
+      dialog.close();
+    }
+  }, [isOpen]);
+
+  // Progressive enhancement fallback for light dismiss when closedby="any" is unsupported
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    const handleClose = () => {
+      if (isOpen) onClose();
+    };
+    dialog.addEventListener('close', handleClose);
+
+    if (!('closedBy' in HTMLDialogElement.prototype)) {
+      const outside = (e: PointerEvent) => {
+        const r = dialog.getBoundingClientRect();
+        return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+      };
+      let pressedOutside = false;
+      const onPointerDown = (e: PointerEvent) => {
+        pressedOutside = outside(e);
+      };
+      const onPointerUp = (e: PointerEvent) => {
+        if (pressedOutside && outside(e)) dialog.close();
+      };
+      dialog.addEventListener('pointerdown', onPointerDown);
+      dialog.addEventListener('pointerup', onPointerUp);
+      return () => {
+        dialog.removeEventListener('close', handleClose);
+        dialog.removeEventListener('pointerdown', onPointerDown);
+        dialog.removeEventListener('pointerup', onPointerUp);
+      };
+    }
+
+    return () => {
+      dialog.removeEventListener('close', handleClose);
+    };
+  }, [isOpen, onClose]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,112 +73,107 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
     try {
       const ok = await login(username, password);
       if (ok) {
+        setPassword('');
         onSuccess?.();
         onClose();
       } else {
-        setError('Invalid username or password. Please check your credentials.');
+        setError('Invalid username or password. Please try again.');
       }
     } catch {
-      setError('Connection to backend failed. Please ensure port 8000 is running.');
+      setError('Could not reach the backend on port 8000.');
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-      <div className="modal-container" style={{ maxWidth: 420 }}>
-        <div className="modal-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ padding: 8, background: 'rgba(15,82,186,0.1)', borderRadius: 8, color: '#0f52ba' }}>
-              <Lock size={18} />
-            </div>
-            <div>
-              <h3 id="modal-title" style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Administrator Sign-In</h3>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Authenticate for full control</span>
-            </div>
-          </div>
-          <button className="modal-close" onClick={onClose} aria-label="Close modal">
-            <X size={18} />
-          </button>
-        </div>
+    <dialog
+      ref={dialogRef}
+      className="cc-dialog cc-dialog-sm"
+      aria-labelledby="login-dialog-title"
+      {...({ closedby: 'any' } as Record<string, string>)}
+    >
+      <div className="cc-dialog-header">
+        <h2 id="login-dialog-title" className="cc-dialog-title">
+          <Lock size={18} style={{ color: 'var(--primary)' }} />
+          Administrator Sign-In
+        </h2>
+        <button
+          type="button"
+          className="cc-dialog-close"
+          onClick={onClose}
+          aria-label="Close sign-in dialog"
+        >
+          <X size={18} />
+        </button>
+      </div>
 
-        <form onSubmit={handleSubmit} style={{ padding: '20px 24px' }}>
+      <form onSubmit={handleSubmit}>
+        <div className="cc-dialog-body">
+          <p style={{ fontSize: '0.84rem', color: 'var(--color-text-secondary)', margin: 0 }}>
+            Sign in to view customer transcripts, manage external chatbots, or issue API keys.
+          </p>
+
           {error && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '10px 12px',
-              background: '#fef2f2',
-              border: '1px solid #fecaca',
-              borderRadius: 6,
-              color: '#b91c1c',
-              fontSize: 13,
-              marginBottom: 16
-            }}>
-              <AlertCircle size={16} />
-              <span>{error}</span>
+            <div className="cc-alert cc-alert-error">
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <AlertCircle size={16} />
+                {error}
+              </span>
             </div>
           )}
 
-          <div style={{ marginBottom: 14 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Username</label>
+          <div className="form-group">
+            <label htmlFor="admin-username" className="form-label">
+              Username
+            </label>
             <input
+              id="admin-username"
               type="text"
+              className="form-input"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
+              autoComplete="username"
               required
-              style={{
-                width: '100%',
-                padding: '9px 12px',
-                border: '1px solid var(--border-color)',
-                borderRadius: 6,
-                fontSize: 14,
-                boxSizing: 'border-box'
-              }}
             />
           </div>
 
-          <div style={{ marginBottom: 20 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Password</label>
+          <div className="form-group">
+            <label htmlFor="admin-password" className="form-label">
+              Password
+            </label>
             <input
+              id="admin-password"
               type="password"
+              className="form-input"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Enter admin password"
+              autoComplete="current-password"
               required
               autoFocus
-              style={{
-                width: '100%',
-                padding: '9px 12px',
-                border: '1px solid var(--border-color)',
-                borderRadius: 6,
-                fontSize: 14,
-                boxSizing: 'border-box'
-              }}
             />
           </div>
+        </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={onClose}
-              disabled={submitting}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="btn-primary"
-              disabled={submitting}
-            >
-              {submitting ? 'Verifying...' : 'Sign In'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <div className="cc-dialog-footer">
+          <button
+            type="button"
+            className="cc-btn cc-btn-secondary"
+            onClick={onClose}
+            disabled={submitting}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="cc-btn cc-btn-primary"
+            disabled={submitting}
+          >
+            {submitting ? 'Signing in...' : 'Sign In'}
+          </button>
+        </div>
+      </form>
+    </dialog>
   );
 }

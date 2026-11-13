@@ -4,6 +4,7 @@ import type { AdminUser } from '../types/api';
 
 interface AuthContextType {
   adminUser: AdminUser | null;
+  isAuthenticated: boolean;
   isLoading: boolean;
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
@@ -59,7 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ adminUser, isLoading, login, logout, refresh: checkAuth }}>
+    <AuthContext.Provider value={{ adminUser, isAuthenticated: Boolean(adminUser), isLoading, login, logout, refresh: checkAuth }}>
       {children}
     </AuthContext.Provider>
   );
