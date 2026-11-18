@@ -145,25 +145,6 @@ export interface ConversationDetail extends ConversationSessionItem {
   }>;
 }
 
-// Backward compatibility types for legacy components
-export type Conversation = ConversationDetail;
-export interface ConversationListParams {
-  page?: number;
-  page_size?: number;
-  channel?: 'voice' | 'chat';
-  language?: string;
-  from_date?: string;
-  to_date?: string;
-  search?: string;
-}
-export interface ConversationListResponse {
-  conversations: Conversation[];
-  total: number;
-  page: number;
-  page_size: number;
-  total_pages: number;
-}
-
 export interface HealthResponse {
   status: 'ok' | 'degraded' | 'down';
   cloud_llm_configured: boolean;
@@ -201,6 +182,111 @@ export interface VoiceTierResponse {
 export interface AdminUser {
   username: string;
   expires_at?: number;
+  role?: 'super_admin' | 'company_admin';
+  tenant_id?: number;
+  tenant_name?: string;
+  tenant_slug?: string;
+}
+
+export interface RoutingRuleItem {
+  id: number;
+  tenant_id?: number;
+  rule_name: string;
+  topic: string;
+  target_agent: string;
+  status: boolean;
+  priority: 'Normal' | 'High' | 'Emergency';
+  fallback_destination: string | null;
+  description: string | null;
+}
+
+export interface TenantSummary {
+  id: number;
+  slug: string;
+  name: string;
+  status: 'Active' | 'Suspended' | 'Trial';
+  plan: 'Starter' | 'Growth' | 'Enterprise';
+  contact_email: string | null;
+  stt_provider: string;
+  tts_provider: string;
+  max_concurrent_sessions: number;
+  agents_count: number;
+  portal_agents_count: number;
+  live_agents_count: number;
+  rules_count: number;
+  admins_count: number;
+  sessions_24h: number;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface CreateTenantRequest {
+  name: string;
+  slug?: string;
+  plan?: 'Starter' | 'Growth' | 'Enterprise';
+  status?: 'Active' | 'Suspended' | 'Trial';
+  contact_email?: string | null;
+  stt_provider?: string;
+  tts_provider?: string;
+  max_concurrent_sessions?: number;
+  admin_username?: string;
+  admin_password?: string;
+}
+
+export interface TenantAdminSummary {
+  id: number;
+  tenant_id: number;
+  username: string;
+  role: string;
+  created_at: string | null;
+  last_login_at: string | null;
+}
+
+export interface GlobalProvidersStatus {
+  stt_strategy: string;
+  tts_strategy: string;
+  cloud_speech_configured: boolean;
+  cloud_speech_provider: string;
+  google_tts_ready: boolean;
+  azure_speech_ready: boolean;
+  cloud_llm_provider: string;
+  cloud_llm_model: string;
+  cloud_llm_configured: boolean;
+  local_whisper_model: string;
+  allowed_stt_strategies: string[];
+  allowed_tts_strategies: string[];
+  limits: {
+    max_concurrent_cloud_stt: number;
+    max_concurrent_cloud_tts: number;
+    max_local_cpu_stt: number;
+  };
+  metrics: {
+    active_stt_streams: number;
+    peak_stt_streams: number;
+    total_stt_requests: number;
+    cloud_stt_requests: number;
+    local_stt_fallbacks: number;
+    active_tts_streams: number;
+    peak_tts_streams: number;
+    total_tts_requests: number;
+    cloud_tts_requests: number;
+    local_tts_fallbacks: number;
+    cloud_offload_percent: number;
+    active_by_tenant: Record<string, number>;
+    requests_by_tenant: Record<string, number>;
+  };
+}
+
+export interface SuperAdminOverview {
+  total_tenants: number;
+  active_tenants: number;
+  suspended_tenants: number;
+  total_bots: number;
+  live_bots: number;
+  total_rules: number;
+  sessions_24h: number;
+  speech_pool: GlobalProvidersStatus;
+  tenants: TenantSummary[];
 }
 
 export interface StatCard {

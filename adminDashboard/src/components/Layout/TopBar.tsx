@@ -1,7 +1,8 @@
-import { Search, User, ExternalLink, Lock, LogOut, Sun, Moon, X } from 'lucide-react';
+import { Search, User, ExternalLink, Lock, LogOut, Sun, Moon, X, Building2 } from 'lucide-react';
 import { LIVE_ASSISTANT_URL } from '../../data/liveHealth';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import type { TenantSummary } from '../../types/api';
 
 interface TopBarProps {
   activeNav?: string;
@@ -11,6 +12,10 @@ interface TopBarProps {
   onSearchChange: (q: string) => void;
   onSearchSubmit?: (q: string) => void;
   onOpenLoginModal: () => void;
+  portalMode?: 'company' | 'super';
+  scopedTenantId?: number;
+  tenants?: TenantSummary[];
+  onSwitchTenant?: (tenantId: number) => void;
 }
 
 export default function TopBar({
@@ -21,15 +26,24 @@ export default function TopBar({
   onSearchChange,
   onSearchSubmit,
   onOpenLoginModal,
+  portalMode = 'company',
+  scopedTenantId = 1,
+  tenants = [],
+  onSwitchTenant,
 }: TopBarProps) {
   const { adminUser, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const isSuper = adminUser?.role === 'super_admin';
 
   const placeholder =
-    activeNav === 'conversations'
+    portalMode === 'super'
+      ? 'Filter onboarded companies by name or slug...'
+      : activeNav === 'conversations'
       ? 'Filter calls & chats by session, model, or summary...'
       : activeNav === 'agents'
       ? 'Filter chatbots by name or endpoint URL...'
+      : activeNav === 'routing'
+      ? 'Filter routing rules by topic or target chatbot...'
       : activeNav === 'gateway'
       ? 'Filter SLT tools, API keys, or audit events...'
       : 'Search chatbots, logs, or tools (press Enter)...';
@@ -69,6 +83,25 @@ export default function TopBar({
       </div>
 
       <div className="cc-topbar-right">
+        {isSuper && portalMode === 'company' && tenants.length > 0 && onSwitchTenant && (
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.82rem' }}>
+            <Building2 size={14} aria-hidden="true" />
+            <select
+              aria-label="Inspect tenant workspace"
+              className="form-input"
+              style={{ padding: '4px 8px', height: 32, minWidth: 150 }}
+              value={scopedTenantId}
+              onChange={(e) => onSwitchTenant(Number(e.target.value))}
+            >
+              {tenants.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name} (#{t.id})
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
         <div
           className="cc-status-pill"
           role="status"
@@ -101,9 +134,9 @@ export default function TopBar({
 
         {adminUser ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className="cc-badge cc-badge-green" title="Signed in as administrator">
+            <span className="cc-badge cc-badge-green" title="Signed in administrator role">
               <User size={13} />
-              {adminUser.username}
+              {adminUser.username} ({isSuper ? 'Super Admin' : adminUser.tenant_name || 'Company Admin'})
             </span>
             <button
               type="button"

@@ -3,6 +3,10 @@ import {
   MessageSquare,
   Bot,
   ShieldCheck,
+  GitBranch,
+  Building2,
+  Cloud,
+  Globe,
 } from 'lucide-react';
 import type { LiveHealthSummary } from '../../data/liveHealth';
 
@@ -12,29 +16,45 @@ interface NavItem {
   icon: React.ElementType;
 }
 
-const navItems: NavItem[] = [
-  { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
+const companyNavItems: NavItem[] = [
+  { id: 'dashboard', label: 'Company Overview', icon: LayoutDashboard },
   { id: 'agents', label: 'External Chatbots', icon: Bot },
+  { id: 'routing', label: 'Routing Rules', icon: GitBranch },
   { id: 'conversations', label: 'Call & Chat Logs', icon: MessageSquare },
   { id: 'gateway', label: 'Security & API Keys', icon: ShieldCheck },
+];
+
+const superNavItems: NavItem[] = [
+  { id: 'sa-overview', label: 'Global Overview', icon: Globe },
+  { id: 'sa-tenants', label: 'Company Onboarding', icon: Building2 },
+  { id: 'sa-providers', label: 'Cloud STT & TTS Pool', icon: Cloud },
 ];
 
 interface SidebarProps {
   activeNav: string;
   onNavChange: (id: string) => void;
   health: LiveHealthSummary;
+  portalMode: 'company' | 'super';
+  onPortalModeChange?: (mode: 'company' | 'super') => void;
+  isSuperAdmin?: boolean;
+  companyName?: string;
 }
 
 function voicePipelineLabel(health: LiveHealthSummary): string {
-  return health.voiceTier === 'gemini_live' ? 'Gemini Live' : 'Whisper + TTS';
+  return health.voiceTier === 'gemini_live' ? 'Gemini Live (Cloud)' : 'Shared Cloud STT/TTS';
 }
 
 export default function Sidebar({
   activeNav,
   onNavChange,
   health,
+  portalMode,
+  onPortalModeChange,
+  isSuperAdmin = false,
+  companyName = 'SLT Mobitel',
 }: SidebarProps) {
   const isExternalActive = health.isExternalActive;
+  const items = portalMode === 'super' && isSuperAdmin ? superNavItems : companyNavItems;
 
   return (
     <aside className="sidebar">
@@ -44,14 +64,39 @@ export default function Sidebar({
             <span className="word-voice">SLT</span>
             <span className="word-layer" style={{ marginLeft: 6 }}>VOICE AI</span>
           </div>
-          <div className="voice-layer-sub">ADMIN PORTAL</div>
+          <div className="voice-layer-sub">
+            {portalMode === 'super' && isSuperAdmin ? 'SUPER ADMIN PORTAL' : `${companyName.toUpperCase()} PORTAL`}
+          </div>
         </div>
       </div>
 
-      <div className="sidebar-section-heading">WORKSPACE</div>
+      {isSuperAdmin && onPortalModeChange && (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+          <button
+            type="button"
+            className={`cc-btn cc-btn-sm ${portalMode === 'company' ? 'cc-btn-primary' : 'cc-btn-secondary'}`}
+            style={{ flex: 1, justifyContent: 'center' }}
+            onClick={() => onPortalModeChange('company')}
+          >
+            Company View
+          </button>
+          <button
+            type="button"
+            className={`cc-btn cc-btn-sm ${portalMode === 'super' ? 'cc-btn-primary' : 'cc-btn-secondary'}`}
+            style={{ flex: 1, justifyContent: 'center' }}
+            onClick={() => onPortalModeChange('super')}
+          >
+            Super Admin
+          </button>
+        </div>
+      )}
+
+      <div className="sidebar-section-heading">
+        {portalMode === 'super' && isSuperAdmin ? 'PLATFORM CONTROL' : 'COMPANY WORKSPACE'}
+      </div>
 
       <nav className="sidebar-nav" aria-label="Main navigation">
-        {navItems.map((item) => {
+        {items.map((item) => {
           const isActive = activeNav === item.id;
           return (
             <button
@@ -87,7 +132,7 @@ export default function Sidebar({
           </span>
         </div>
         <div className="sla-row">
-          <span className="sla-label">Voice Engine</span>
+          <span className="sla-label">Speech Pool</span>
           <span className="sla-val-dark cc-health-value">
             {health.online ? voicePipelineLabel(health) : '—'}
           </span>

@@ -8,6 +8,7 @@ export default defineConfig({
       '/health': 'http://127.0.0.1:8000',
       '/api': 'http://127.0.0.1:8000',
       '/admin/api': 'http://127.0.0.1:8000',
+      '/super-admin': 'http://127.0.0.1:8000',
       '/auth': 'http://127.0.0.1:8000',
       '/conversations': 'http://127.0.0.1:8000',
     },

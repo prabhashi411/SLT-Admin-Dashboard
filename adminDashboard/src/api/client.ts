@@ -16,14 +16,29 @@ import type {
   HealthResponse,
   VoiceTierResponse,
   AdminUser,
+  RoutingRuleItem,
+  SuperAdminOverview,
+  TenantSummary,
+  CreateTenantRequest,
+  TenantAdminSummary,
+  GlobalProvidersStatus,
 } from '../types/api';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/admin/api';
+const SCOPED_TENANT_KEY = 'slt_scoped_tenant_id';
 
 class ApiClient {
   private client: AxiosInstance;
+  private scopedTenantId: number | null = null;
 
   constructor() {
+    try {
+      const saved = typeof window !== 'undefined' ? sessionStorage.getItem(SCOPED_TENANT_KEY) : null;
+      if (saved && /^\d+$/.test(saved)) this.scopedTenantId = Number(saved);
+    } catch {
+      this.scopedTenantId = null;
+    }
+
     this.client = axios.create({
       baseURL: API_BASE,
       withCredentials: true,
@@ -34,7 +49,12 @@ class ApiClient {
     });
 
     this.client.interceptors.request.use(
-      (config: InternalAxiosRequestConfig) => config,
+      (config: InternalAxiosRequestConfig) => {
+        if (this.scopedTenantId !== null) {
+          config.headers.set('X-Tenant-Id', String(this.scopedTenantId));
+        }
+        return config;
+      },
       (error: AxiosError) => Promise.reject(error)
     );
 
@@ -49,6 +69,26 @@ class ApiClient {
         return Promise.reject(error);
       }
     );
+  }
+
+  getScopedTenantId(): number | null {
+    return this.scopedTenantId;
+  }
+
+  setScopedTenantId(id: number | null): void {
+    this.scopedTenantId = id;
+    try {
+      if (typeof window !== 'undefined') {
+        if (id === null) sessionStorage.removeItem(SCOPED_TENANT_KEY);
+        else sessionStorage.setItem(SCOPED_TENANT_KEY, String(id));
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  private tenantHeaders(): Record<string, string> {
+    return this.scopedTenantId !== null ? { 'X-Tenant-Id': String(this.scopedTenantId) } : {};
   }
 
   // Admin Auth
@@ -170,6 +210,7 @@ class ApiClient {
   async getConversations(limit = 50): Promise<ConversationSessionItem[]> {
     const { data } = await axios.get<{ conversations: ConversationSessionItem[] }>('/conversations', {
       params: { limit },
+      headers: this.tenantHeaders(),
       withCredentials: true,
     });
     return data.conversations || [];
@@ -177,6 +218,7 @@ class ApiClient {
 
   async getConversation(id: string): Promise<ConversationDetail> {
     const { data } = await axios.get<ConversationDetail>(`/conversations/${id}`, {
+      headers: this.tenantHeaders(),
       withCredentials: true,
     });
     return data;
@@ -184,12 +226,89 @@ class ApiClient {
 
   // Public Telemetry & Health
   async getHealth(): Promise<HealthResponse> {
-    const { data } = await axios.get<HealthResponse>('/health', { withCredentials: true });
+    const { data } = await axios.get<HealthResponse>('/health', {
+      headers: this.tenantHeaders(),
+      withCredentials: true,
+    });
     return data;
   }
 
   async getVoiceTier(): Promise<VoiceTierResponse> {
-    const { data } = await axios.get<VoiceTierResponse>('/api/voice/tier', { withCredentials: true });
+    const { data } = await axios.get<VoiceTierResponse>('/api/voice/tier', {
+      headers: this.tenantHeaders(),
+      withCredentials: true,
+    });
+    return data;
+  }
+
+  // Scoped Routing Rules
+  async getRoutingRules(): Promise<RoutingRuleItem[]> {
+    const { data } = await this.client.get<{ rules: RoutingRuleItem[] }>('/routing-rules');
+    return data.rules || [];
+  }
+
+  async createRoutingRule(rule: Partial<RoutingRuleItem>): Promise<RoutingRuleItem> {
+    const { data } = await this.client.post<RoutingRuleItem>('/routing-rules', rule);
+    return data;
+  }
+
+  async toggleRoutingRule(id: number, status: boolean): Promise<RoutingRuleItem> {
+    const { data } = await this.client.post<RoutingRuleItem>(`/routing-rules/${id}/enabled`, { status });
+    return data;
+  }
+
+  async deleteRoutingRule(id: number): Promise<void> {
+    await this.client.delete(`/routing-rules/${id}`);
+  }
+
+  // Super Admin Portal (/super-admin/api)
+  async getSuperOverview(): Promise<SuperAdminOverview> {
+    const { data } = await axios.get<SuperAdminOverview>('/super-admin/api/overview', { withCredentials: true });
+    return data;
+  }
+
+  async getTenants(): Promise<TenantSummary[]> {
+    const { data } = await axios.get<{ tenants: TenantSummary[] }>('/super-admin/api/tenants', { withCredentials: true });
+    return data.tenants || [];
+  }
+
+  async createTenant(body: CreateTenantRequest): Promise<TenantSummary> {
+    const { data } = await axios.post<TenantSummary>('/super-admin/api/tenants', body, { withCredentials: true });
+    return data;
+  }
+
+  async updateTenant(id: number, body: Partial<CreateTenantRequest>): Promise<TenantSummary> {
+    const { data } = await axios.put<TenantSummary>(`/super-admin/api/tenants/${id}`, body, { withCredentials: true });
+    return data;
+  }
+
+  async deleteTenant(id: number): Promise<void> {
+    await axios.delete(`/super-admin/api/tenants/${id}`, { withCredentials: true });
+  }
+
+  async getTenantAdmins(tenantId: number): Promise<TenantAdminSummary[]> {
+    const { data } = await axios.get<{ admins: TenantAdminSummary[] }>(`/super-admin/api/tenants/${tenantId}/admins`, { withCredentials: true });
+    return data.admins || [];
+  }
+
+  async createTenantAdmin(tenantId: number, body: { username: string; password: string; role?: string }): Promise<TenantAdminSummary> {
+    const { data } = await axios.post<TenantAdminSummary>(`/super-admin/api/tenants/${tenantId}/admins`, body, { withCredentials: true });
+    return data;
+  }
+
+  async getGlobalProviders(): Promise<GlobalProvidersStatus> {
+    const { data } = await axios.get<GlobalProvidersStatus>('/super-admin/api/providers', { withCredentials: true });
+    return data;
+  }
+
+  async updateGlobalProviders(body: {
+    stt_strategy?: string;
+    tts_strategy?: string;
+    max_concurrent_cloud_stt?: number;
+    max_concurrent_cloud_tts?: number;
+    max_local_cpu_stt?: number;
+  }): Promise<GlobalProvidersStatus> {
+    const { data } = await axios.put<GlobalProvidersStatus>('/super-admin/api/providers', body, { withCredentials: true });
     return data;
   }
 }

@@ -5,19 +5,30 @@ import Dashboard from './pages/Dashboard';
 import ConversationsPage from './pages/Conversations';
 import ConnectedAgentsPage from './pages/ConnectedAgents';
 import RegisterAgent from './pages/RegisterAgent';
+import RoutingRulesPage from './pages/RoutingRules';
 import GatewayAuditPage from './pages/GatewayAudit';
+import SuperAdminPortal from './pages/SuperAdminPortal';
 import LoginModal from './components/Auth/LoginModal';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
-import { QueryProvider } from './context/QueryProvider';
+import { api } from './api/client';
 import {
   initialHealth,
   toLiveHealth,
   type LiveHealthSummary,
 } from './data/liveHealth';
-import type { Agent } from './types/api';
+import type { Agent, TenantSummary } from './types/api';
 
-type View = 'dashboard' | 'conversations' | 'agents' | 'gateway' | 'register';
+type View =
+  | 'dashboard'
+  | 'conversations'
+  | 'agents'
+  | 'routing'
+  | 'gateway'
+  | 'register'
+  | 'sa-overview'
+  | 'sa-tenants'
+  | 'sa-providers';
 
 const POLL_MS = 8000;
 
@@ -26,13 +37,10 @@ function useLiveHealth() {
 
   const poll = useCallback(async () => {
     try {
-      const [healthRes, tierRes] = await Promise.all([
-        fetch('/health'),
-        fetch('/api/voice/tier').catch(() => null),
+      const [body, tier] = await Promise.all([
+        api.getHealth(),
+        api.getVoiceTier().catch(() => null),
       ]);
-      if (!healthRes.ok) throw new Error(`HTTP ${healthRes.status}`);
-      const body = await healthRes.json();
-      const tier = tierRes && tierRes.ok ? await tierRes.json() : null;
       setHealth(toLiveHealth(body, tier));
     } catch {
       setHealth((prev) => ({ ...prev, online: false }));
@@ -51,13 +59,42 @@ function useLiveHealth() {
 }
 
 function MainLayout() {
+  const { adminUser } = useAuth();
+  const isSuperAdmin = adminUser?.role === 'super_admin';
+  const [portalMode, setPortalMode] = useState<'company' | 'super'>('company');
   const [activeNav, setActiveNav] = useState('dashboard');
   const [view, setView] = useState<View>('dashboard');
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [globalSearch, setGlobalSearch] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [tenants, setTenants] = useState<TenantSummary[]>([]);
+  const [scopedTenantId, setScopedTenantId] = useState<number>(() => api.getScopedTenantId() || 1);
   const { health, refreshHealth } = useLiveHealth();
+
+  useEffect(() => {
+    if (!adminUser) {
+      setPortalMode('company');
+      api.setScopedTenantId(null);
+      return;
+    }
+    if (adminUser.role === 'company_admin') {
+      const ownTid = adminUser.tenant_id || 1;
+      setPortalMode('company');
+      setScopedTenantId(ownTid);
+      api.setScopedTenantId(ownTid);
+      setTenants([]);
+      if (view.startsWith('sa-')) {
+        setView('dashboard');
+        setActiveNav('dashboard');
+      }
+    } else if (adminUser.role === 'super_admin') {
+      const saved = api.getScopedTenantId() || adminUser.tenant_id || 1;
+      setScopedTenantId(saved);
+      api.setScopedTenantId(saved);
+      api.getTenants().then(setTenants).catch(() => setTenants([]));
+    }
+  }, [adminUser]);
 
   useEffect(() => {
     if (!toastMessage) return;
@@ -70,10 +107,38 @@ function MainLayout() {
     setActiveNav(navId || (target === 'register' ? 'agents' : target));
   };
 
+  const handlePortalModeChange = (mode: 'company' | 'super') => {
+    if (!isSuperAdmin) return;
+    setPortalMode(mode);
+    setGlobalSearch('');
+    if (mode === 'super') {
+      navigateTo('sa-overview');
+    } else {
+      navigateTo('dashboard');
+    }
+  };
+
+  const handleSwitchTenant = (tid: number) => {
+    if (!isSuperAdmin) return;
+    setScopedTenantId(tid);
+    api.setScopedTenantId(tid);
+    refreshHealth();
+    setPortalMode('company');
+    navigateTo('dashboard');
+    const match = tenants.find((t) => t.id === tid);
+    if (match) setToastMessage(`Switched scoped workspace to ${match.name}.`);
+  };
+
   const handleNavChange = (id: string) => {
     setActiveNav(id);
     setEditingAgent(null);
-    if (['dashboard', 'conversations', 'agents', 'gateway'].includes(id)) {
+    if (id.startsWith('sa-') && isSuperAdmin) {
+      setPortalMode('super');
+      setView(id as View);
+      return;
+    }
+    if (['dashboard', 'conversations', 'agents', 'routing', 'gateway'].includes(id)) {
+      setPortalMode('company');
       setView(id as View);
     }
   };
@@ -106,6 +171,7 @@ function MainLayout() {
       case 'dashboard':
         return (
           <Dashboard
+            key={`dash-${scopedTenantId}`}
             onRegisterAgent={handleOpenCreateAgent}
             onNavigateToConversations={() => navigateTo('conversations')}
             onNavigateToAgents={() => navigateTo('agents')}
@@ -118,6 +184,7 @@ function MainLayout() {
       case 'conversations':
         return (
           <ConversationsPage
+            key={`conv-${scopedTenantId}`}
             searchQuery={globalSearch}
             onOpenLogin={() => setIsLoginModalOpen(true)}
           />
@@ -125,6 +192,7 @@ function MainLayout() {
       case 'agents':
         return (
           <ConnectedAgentsPage
+            key={`agents-${scopedTenantId}`}
             onRegisterAgent={handleOpenCreateAgent}
             onEditAgent={handleOpenEditAgent}
             onOpenLogin={() => setIsLoginModalOpen(true)}
@@ -153,17 +221,49 @@ function MainLayout() {
             }}
           />
         );
+      case 'routing':
+        return (
+          <RoutingRulesPage
+            key={`routing-${scopedTenantId}`}
+            searchQuery={globalSearch}
+            onOpenLogin={() => setIsLoginModalOpen(true)}
+            onToast={(msg) => setToastMessage(msg)}
+          />
+        );
       case 'gateway':
         return (
           <GatewayAuditPage
+            key={`gateway-${scopedTenantId}`}
             searchQuery={globalSearch}
             onOpenLogin={() => setIsLoginModalOpen(true)}
           />
         );
+      case 'sa-overview':
+      case 'sa-tenants':
+      case 'sa-providers':
+        return isSuperAdmin ? (
+          <SuperAdminPortal
+            activeTab={
+              view === 'sa-tenants'
+                ? 'tenants'
+                : view === 'sa-providers'
+                ? 'providers'
+                : 'overview'
+            }
+            searchQuery={globalSearch}
+            onInspectCompany={(tenant) => handleSwitchTenant(tenant.id)}
+            onToast={(msg) => setToastMessage(msg)}
+          />
+        ) : null;
       default:
         return null;
     }
   };
+
+  const activeCompanyName =
+    tenants.find((t) => t.id === scopedTenantId)?.name ||
+    adminUser?.tenant_name ||
+    'SLT Mobitel';
 
   return (
     <div className="app-layout">
@@ -171,6 +271,10 @@ function MainLayout() {
         activeNav={activeNav}
         onNavChange={handleNavChange}
         health={health}
+        portalMode={portalMode}
+        onPortalModeChange={isSuperAdmin ? handlePortalModeChange : undefined}
+        isSuperAdmin={isSuperAdmin}
+        companyName={activeCompanyName}
       />
       <div className="main-wrapper">
         <TopBar
@@ -181,6 +285,10 @@ function MainLayout() {
           onSearchChange={setGlobalSearch}
           onSearchSubmit={handleSearchSubmit}
           onOpenLoginModal={() => setIsLoginModalOpen(true)}
+          portalMode={portalMode}
+          scopedTenantId={scopedTenantId}
+          tenants={tenants}
+          onSwitchTenant={isSuperAdmin ? handleSwitchTenant : undefined}
         />
         <main className="main-content">
           {toastMessage && (
@@ -212,11 +320,9 @@ function MainLayout() {
 export default function App() {
   return (
     <ThemeProvider>
-      <QueryProvider>
-        <AuthProvider>
-          <MainLayout />
-        </AuthProvider>
-      </QueryProvider>
+      <AuthProvider>
+        <MainLayout />
+      </AuthProvider>
     </ThemeProvider>
   );
 }
